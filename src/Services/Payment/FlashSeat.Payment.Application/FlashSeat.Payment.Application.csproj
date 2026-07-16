@@ -1,0 +1,3 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup><ProjectReference Include="..\FlashSeat.Payment.Domain\FlashSeat.Payment.Domain.csproj" /><PackageReference Include="FluentValidation.AspNetCore" /></ItemGroup>
+</Project>

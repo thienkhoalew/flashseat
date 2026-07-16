@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\BuildingBlocks\FlashSeat.Observability\FlashSeat.Observability.csproj" />
+    <ProjectReference Include="..\FlashSeat.Booking.Application\FlashSeat.Booking.Application.csproj" />
+    <ProjectReference Include="..\FlashSeat.Booking.Infrastructure\FlashSeat.Booking.Infrastructure.csproj" />
+    <PackageReference Include="Microsoft.AspNetCore.OpenApi" />
+    <PackageReference Include="Swashbuckle.AspNetCore" />
+  </ItemGroup>
+</Project>

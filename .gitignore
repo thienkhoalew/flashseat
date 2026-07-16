@@ -1,0 +1,31 @@
+# .NET
+**/bin/
+**/obj/
+*.user
+*.suo
+TestResults/
+coverage/
+
+# Node
+**/node_modules/
+**/dist/
+*.tsbuildinfo
+
+# Local configuration
+.env
+.env.*
+!.env.example
+appsettings.Development.local.json
+secrets.json
+
+# IDE / OS
+.vs/
+.vscode/
+.idea/
+.claude/settings.local.json
+.DS_Store
+Thumbs.db
+
+# Containers and tooling
+artifacts/
+*.log

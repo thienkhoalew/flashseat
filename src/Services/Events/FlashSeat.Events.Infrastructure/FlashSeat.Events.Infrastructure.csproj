@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <ProjectReference Include="..\..\..\BuildingBlocks\FlashSeat.Observability\FlashSeat.Observability.csproj" />
+    <ProjectReference Include="..\FlashSeat.Events.Application\FlashSeat.Events.Application.csproj" />
+    <ProjectReference Include="..\FlashSeat.Events.Domain\FlashSeat.Events.Domain.csproj" />
+    <PackageReference Include="AspNetCore.HealthChecks.NpgSql" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design"><PrivateAssets>all</PrivateAssets></PackageReference>
+    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" />
+  </ItemGroup>
+</Project>

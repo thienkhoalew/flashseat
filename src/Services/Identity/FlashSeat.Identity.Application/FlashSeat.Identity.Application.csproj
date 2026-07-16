@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="..\FlashSeat.Identity.Domain\FlashSeat.Identity.Domain.csproj" />
+    <PackageReference Include="FluentValidation.AspNetCore" />
+  </ItemGroup>
+</Project>

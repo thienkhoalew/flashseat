@@ -1,0 +1,2 @@
+import React from 'react';
+export class ErrorBoundary extends React.Component<React.PropsWithChildren, {failed:boolean}>{state={failed:false};static getDerivedStateFromError(){return{failed:true}}render(){return this.state.failed?<main className="center"><p className="eyebrow">LỖI ỨNG DỤNG</p><h1>FlashSeat cần tải lại</h1><button className="button" onClick={()=>location.reload()}>Tải lại</button></main>:this.props.children}}

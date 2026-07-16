@@ -1,0 +1,19 @@
+name: Frontend CI
+on:
+  push:
+    paths: ['src/Web/flashseat-web/**','.github/workflows/frontend-ci.yml']
+  pull_request:
+    paths: ['src/Web/flashseat-web/**']
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    defaults: { run: { working-directory: src/Web/flashseat-web } }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm, cache-dependency-path: src/Web/flashseat-web/package-lock.json }
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build

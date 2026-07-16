@@ -1,0 +1,17 @@
+name: Backend CI
+on:
+  push:
+    paths: ['**/*.cs','**/*.csproj','**/*.props','FlashSeat.sln','.github/workflows/backend-ci.yml']
+  pull_request:
+    paths: ['**/*.cs','**/*.csproj','**/*.props','FlashSeat.sln']
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with: { dotnet-version: '8.0.x' }
+      - run: dotnet restore FlashSeat.sln
+      - run: dotnet format FlashSeat.sln --verify-no-changes --no-restore
+      - run: dotnet build FlashSeat.sln -c Release --no-restore
+      - run: dotnet test tests/FlashSeat.UnitTests/FlashSeat.UnitTests.csproj -c Release --no-build --logger trx

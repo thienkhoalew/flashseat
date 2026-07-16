@@ -1,0 +1,139 @@
+
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FlashSeat.Contracts", "src\BuildingBlocks\FlashSeat.Contracts\FlashSeat.Contracts.csproj", "{F64838D7-D64E-4C3E-A88E-D7FAF0098101}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FlashSeat.Observability", "src\BuildingBlocks\FlashSeat.Observability\FlashSeat.Observability.csproj", "{F64838D7-D64E-4C3E-A88E-D7FAF0098102}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FlashSeat.Gateway", "src\Gateway\FlashSeat.Gateway\FlashSeat.Gateway.csproj", "{F64838D7-D64E-4C3E-A88E-D7FAF0098103}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FlashSeat.Identity.Domain", "src\Services\Identity\FlashSeat.Identity.Domain\FlashSeat.Identity.Domain.csproj", "{F64838D7-D64E-4C3E-A88E-D7FAF0098104}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FlashSeat.Identity.Application", "src\Services\Identity\FlashSeat.Identity.Application\FlashSeat.Identity.Application.csproj", "{F64838D7-D64E-4C3E-A88E-D7FAF0098105}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FlashSeat.Identity.Infrastructure", "src\Services\Identity\FlashSeat.Identity.Infrastructure\FlashSeat.Identity.Infrastructure.csproj", "{F64838D7-D64E-4C3E-A88E-D7FAF0098106}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FlashSeat.Identity.Api", "src\Services\Identity\FlashSeat.Identity.Api\FlashSeat.Identity.Api.csproj", "{F64838D7-D64E-4C3E-A88E-D7FAF0098107}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FlashSeat.UnitTests", "tests\FlashSeat.UnitTests\FlashSeat.UnitTests.csproj", "{F64838D7-D64E-4C3E-A88E-D7FAF0098108}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FlashSeat.Events.Domain", "src\Services\Events\FlashSeat.Events.Domain\FlashSeat.Events.Domain.csproj", "{F64838D7-D64E-4C3E-A88E-D7FAF0098109}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FlashSeat.Events.Application", "src\Services\Events\FlashSeat.Events.Application\FlashSeat.Events.Application.csproj", "{F64838D7-D64E-4C3E-A88E-D7FAF0098110}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FlashSeat.Events.Infrastructure", "src\Services\Events\FlashSeat.Events.Infrastructure\FlashSeat.Events.Infrastructure.csproj", "{F64838D7-D64E-4C3E-A88E-D7FAF0098111}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FlashSeat.Events.Api", "src\Services\Events\FlashSeat.Events.Api\FlashSeat.Events.Api.csproj", "{F64838D7-D64E-4C3E-A88E-D7FAF0098112}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FlashSeat.Booking.Domain", "src\Services\Booking\FlashSeat.Booking.Domain\FlashSeat.Booking.Domain.csproj", "{F64838D7-D64E-4C3E-A88E-D7FAF0098113}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FlashSeat.Booking.Application", "src\Services\Booking\FlashSeat.Booking.Application\FlashSeat.Booking.Application.csproj", "{F64838D7-D64E-4C3E-A88E-D7FAF0098114}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FlashSeat.Booking.Infrastructure", "src\Services\Booking\FlashSeat.Booking.Infrastructure\FlashSeat.Booking.Infrastructure.csproj", "{F64838D7-D64E-4C3E-A88E-D7FAF0098115}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FlashSeat.Booking.Api", "src\Services\Booking\FlashSeat.Booking.Api\FlashSeat.Booking.Api.csproj", "{F64838D7-D64E-4C3E-A88E-D7FAF0098116}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FlashSeat.Payment.Domain", "src\Services\Payment\FlashSeat.Payment.Domain\FlashSeat.Payment.Domain.csproj", "{F64838D7-D64E-4C3E-A88E-D7FAF0098117}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FlashSeat.Payment.Application", "src\Services\Payment\FlashSeat.Payment.Application\FlashSeat.Payment.Application.csproj", "{F64838D7-D64E-4C3E-A88E-D7FAF0098118}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FlashSeat.Payment.Infrastructure", "src\Services\Payment\FlashSeat.Payment.Infrastructure\FlashSeat.Payment.Infrastructure.csproj", "{F64838D7-D64E-4C3E-A88E-D7FAF0098119}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FlashSeat.Payment.Api", "src\Services\Payment\FlashSeat.Payment.Api\FlashSeat.Payment.Api.csproj", "{F64838D7-D64E-4C3E-A88E-D7FAF0098120}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FlashSeat.Notification.Worker", "src\Workers\FlashSeat.Notification.Worker\FlashSeat.Notification.Worker.csproj", "{F64838D7-D64E-4C3E-A88E-D7FAF0098121}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{F64838D7-D64E-4C3E-A88E-D7FAF0098101}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{F64838D7-D64E-4C3E-A88E-D7FAF0098101}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{F64838D7-D64E-4C3E-A88E-D7FAF0098101}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{F64838D7-D64E-4C3E-A88E-D7FAF0098101}.Release|Any CPU.Build.0 = Release|Any CPU
+		{F64838D7-D64E-4C3E-A88E-D7FAF0098102}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{F64838D7-D64E-4C3E-A88E-D7FAF0098102}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{F64838D7-D64E-4C3E-A88E-D7FAF0098102}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{F64838D7-D64E-4C3E-A88E-D7FAF0098102}.Release|Any CPU.Build.0 = Release|Any CPU
+		{F64838D7-D64E-4C3E-A88E-D7FAF0098103}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{F64838D7-D64E-4C3E-A88E-D7FAF0098103}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{F64838D7-D64E-4C3E-A88E-D7FAF0098103}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{F64838D7-D64E-4C3E-A88E-D7FAF0098103}.Release|Any CPU.Build.0 = Release|Any CPU
+		{F64838D7-D64E-4C3E-A88E-D7FAF0098104}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{F64838D7-D64E-4C3E-A88E-D7FAF0098104}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{F64838D7-D64E-4C3E-A88E-D7FAF0098104}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{F64838D7-D64E-4C3E-A88E-D7FAF0098104}.Release|Any CPU.Build.0 = Release|Any CPU
+		{F64838D7-D64E-4C3E-A88E-D7FAF0098105}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{F64838D7-D64E-4C3E-A88E-D7FAF0098105}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{F64838D7-D64E-4C3E-A88E-D7FAF0098105}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{F64838D7-D64E-4C3E-A88E-D7FAF0098105}.Release|Any CPU.Build.0 = Release|Any CPU
+		{F64838D7-D64E-4C3E-A88E-D7FAF0098106}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{F64838D7-D64E-4C3E-A88E-D7FAF0098106}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{F64838D7-D64E-4C3E-A88E-D7FAF0098106}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{F64838D7-D64E-4C3E-A88E-D7FAF0098106}.Release|Any CPU.Build.0 = Release|Any CPU
+		{F64838D7-D64E-4C3E-A88E-D7FAF0098107}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{F64838D7-D64E-4C3E-A88E-D7FAF0098107}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{F64838D7-D64E-4C3E-A88E-D7FAF0098107}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{F64838D7-D64E-4C3E-A88E-D7FAF0098107}.Release|Any CPU.Build.0 = Release|Any CPU
+		{F64838D7-D64E-4C3E-A88E-D7FAF0098108}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{F64838D7-D64E-4C3E-A88E-D7FAF0098108}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{F64838D7-D64E-4C3E-A88E-D7FAF0098108}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{F64838D7-D64E-4C3E-A88E-D7FAF0098108}.Release|Any CPU.Build.0 = Release|Any CPU
+		{F64838D7-D64E-4C3E-A88E-D7FAF0098109}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{F64838D7-D64E-4C3E-A88E-D7FAF0098109}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{F64838D7-D64E-4C3E-A88E-D7FAF0098109}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{F64838D7-D64E-4C3E-A88E-D7FAF0098109}.Release|Any CPU.Build.0 = Release|Any CPU
+		{F64838D7-D64E-4C3E-A88E-D7FAF0098110}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{F64838D7-D64E-4C3E-A88E-D7FAF0098110}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{F64838D7-D64E-4C3E-A88E-D7FAF0098110}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{F64838D7-D64E-4C3E-A88E-D7FAF0098110}.Release|Any CPU.Build.0 = Release|Any CPU
+		{F64838D7-D64E-4C3E-A88E-D7FAF0098111}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{F64838D7-D64E-4C3E-A88E-D7FAF0098111}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{F64838D7-D64E-4C3E-A88E-D7FAF0098111}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{F64838D7-D64E-4C3E-A88E-D7FAF0098111}.Release|Any CPU.Build.0 = Release|Any CPU
+		{F64838D7-D64E-4C3E-A88E-D7FAF0098112}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{F64838D7-D64E-4C3E-A88E-D7FAF0098112}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{F64838D7-D64E-4C3E-A88E-D7FAF0098112}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{F64838D7-D64E-4C3E-A88E-D7FAF0098112}.Release|Any CPU.Build.0 = Release|Any CPU
+		{F64838D7-D64E-4C3E-A88E-D7FAF0098113}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{F64838D7-D64E-4C3E-A88E-D7FAF0098113}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{F64838D7-D64E-4C3E-A88E-D7FAF0098113}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{F64838D7-D64E-4C3E-A88E-D7FAF0098113}.Release|Any CPU.Build.0 = Release|Any CPU
+		{F64838D7-D64E-4C3E-A88E-D7FAF0098114}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{F64838D7-D64E-4C3E-A88E-D7FAF0098114}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{F64838D7-D64E-4C3E-A88E-D7FAF0098114}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{F64838D7-D64E-4C3E-A88E-D7FAF0098114}.Release|Any CPU.Build.0 = Release|Any CPU
+		{F64838D7-D64E-4C3E-A88E-D7FAF0098115}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{F64838D7-D64E-4C3E-A88E-D7FAF0098115}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{F64838D7-D64E-4C3E-A88E-D7FAF0098115}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{F64838D7-D64E-4C3E-A88E-D7FAF0098115}.Release|Any CPU.Build.0 = Release|Any CPU
+		{F64838D7-D64E-4C3E-A88E-D7FAF0098116}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{F64838D7-D64E-4C3E-A88E-D7FAF0098116}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{F64838D7-D64E-4C3E-A88E-D7FAF0098116}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{F64838D7-D64E-4C3E-A88E-D7FAF0098116}.Release|Any CPU.Build.0 = Release|Any CPU
+		{F64838D7-D64E-4C3E-A88E-D7FAF0098117}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{F64838D7-D64E-4C3E-A88E-D7FAF0098117}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{F64838D7-D64E-4C3E-A88E-D7FAF0098117}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{F64838D7-D64E-4C3E-A88E-D7FAF0098117}.Release|Any CPU.Build.0 = Release|Any CPU
+		{F64838D7-D64E-4C3E-A88E-D7FAF0098118}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{F64838D7-D64E-4C3E-A88E-D7FAF0098118}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{F64838D7-D64E-4C3E-A88E-D7FAF0098118}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{F64838D7-D64E-4C3E-A88E-D7FAF0098118}.Release|Any CPU.Build.0 = Release|Any CPU
+		{F64838D7-D64E-4C3E-A88E-D7FAF0098119}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{F64838D7-D64E-4C3E-A88E-D7FAF0098119}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{F64838D7-D64E-4C3E-A88E-D7FAF0098119}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{F64838D7-D64E-4C3E-A88E-D7FAF0098119}.Release|Any CPU.Build.0 = Release|Any CPU
+		{F64838D7-D64E-4C3E-A88E-D7FAF0098120}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{F64838D7-D64E-4C3E-A88E-D7FAF0098120}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{F64838D7-D64E-4C3E-A88E-D7FAF0098120}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{F64838D7-D64E-4C3E-A88E-D7FAF0098120}.Release|Any CPU.Build.0 = Release|Any CPU
+		{F64838D7-D64E-4C3E-A88E-D7FAF0098121}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{F64838D7-D64E-4C3E-A88E-D7FAF0098121}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{F64838D7-D64E-4C3E-A88E-D7FAF0098121}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{F64838D7-D64E-4C3E-A88E-D7FAF0098121}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+EndGlobal
