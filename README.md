@@ -1,6 +1,6 @@
 # FlashSeat — Nền tảng đặt vé sự kiện chịu tải cao
 
-FlashSeat là dự án portfolio full-stack mô phỏng một hệ thống bán vé sự kiện thực tế. Người dùng có thể khám phá sự kiện, chọn ghế, giữ ghế trong 5 phút, tạo đơn, thanh toán giả lập và nhận thông báo xác nhận.
+FlashSeat là nền tảng đặt vé sự kiện full-stack mô phỏng quy trình bán vé thực tế. Người dùng có thể khám phá sự kiện, chọn ghế, giữ ghế trong 5 phút, tạo đơn, thanh toán giả lập và nhận thông báo xác nhận.
 
 Điểm kỹ thuật chính của dự án: **ngăn hai khách hàng đặt cùng một ghế khi request xảy ra đồng thời** bằng Redis lock kết hợp transaction và conditional update trong PostgreSQL.
 
@@ -8,19 +8,21 @@ FlashSeat là dự án portfolio full-stack mô phỏng một hệ thống bán 
 
 ---
 
-## 1. Dự án này thể hiện điều gì?
+## 1. Tổng quan kỹ thuật
 
-FlashSeat được xây dựng để ứng tuyển vị trí Junior .NET/C# và React Developer, tập trung vào các kỹ năng:
+FlashSeat sử dụng kiến trúc microservices để phân tách rõ nghiệp vụ xác thực, quản lý sự kiện, giữ/đặt ghế, thanh toán và thông báo. Hệ thống kết hợp giao tiếp HTTP đồng bộ với integration events bất đồng bộ, đồng thời sử dụng nhiều lớp bảo vệ dữ liệu khi có request cạnh tranh.
 
-- ASP.NET Core Web API, C#, Dependency Injection và middleware.
-- Entity Framework Core, PostgreSQL, transaction và optimistic concurrency.
-- Redis TTL, distributed lock và cache hạ tầng.
-- RabbitMQ, MassTransit, Outbox/Inbox và consumer idempotent.
+Các thành phần kỹ thuật chính:
+
+- ASP.NET Core Web API và C# cho các dịch vụ backend.
+- Entity Framework Core và PostgreSQL cho lưu trữ dữ liệu, transaction và optimistic concurrency.
+- Redis TTL và distributed lock để điều phối request giữ ghế.
+- RabbitMQ, MassTransit, Outbox/Inbox và consumer idempotent cho messaging.
 - JWT authentication, refresh token rotation và role-based authorization.
-- `async/await`, `BackgroundService`, bounded `Channel<T>` và cancellation.
-- React, TypeScript strict, TanStack Query, React Hook Form và SignalR.
-- Docker Compose, health checks, structured logging và CI.
-- Unit test, frontend test và kiểm thử race condition.
+- `async/await`, `BackgroundService`, bounded `Channel<T>` và cancellation cho background processing.
+- React, TypeScript strict, TanStack Query, React Hook Form và SignalR cho frontend.
+- Docker Compose, health checks, structured logging và GitHub Actions cho vận hành và CI.
+- xUnit, Vitest và k6 cho unit test, frontend test và race test.
 
 ---
 
@@ -474,13 +476,13 @@ Chưa ghi số liệu p95 k6 vì chưa chạy benchmark đầy đủ 100 virtual
 
 ### Giới hạn auth của MVP
 
-Access token đang lưu trong `localStorage`; refresh token lưu trong `sessionStorage`. Cách này đơn giản cho portfolio nhưng vẫn có rủi ro XSS. Bản production nên chuyển refresh token sang cookie `HttpOnly`, `Secure`, `SameSite` phù hợp.
+Access token đang lưu trong `localStorage`; refresh token lưu trong `sessionStorage`. Cách triển khai MVP này vẫn có rủi ro XSS. Bản production nên chuyển refresh token sang cookie `HttpOnly`, `Secure`, `SameSite` phù hợp.
 
 ---
 
 ## 14. Trade-off và giới hạn hiện tại
 
-- Microservices phức tạp hơn modular monolith; dự án dùng chúng để trình diễn service boundaries, messaging và eventual consistency.
+- Microservices phức tạp hơn modular monolith; kiến trúc này được chọn để tách service boundaries, messaging và eventual consistency.
 - Redis giảm contention; database condition và transaction mới bảo đảm tính đúng đắn cuối cùng.
 - RabbitMQ là at-least-once nên consumer bắt buộc idempotent.
 - Không dùng distributed transaction; chọn Outbox và eventual consistency.
