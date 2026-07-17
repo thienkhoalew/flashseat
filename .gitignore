@@ -26,6 +26,7 @@ secrets.json
 .claude/settings.json
 .DS_Store
 Thumbs.db
+.claude/
 
 # Containers and tooling
 artifacts/
