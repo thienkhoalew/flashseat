@@ -9,8 +9,7 @@ var builder = WebApplication.CreateBuilder(args);
 builder.AddFlashSeatDefaults();
 builder.Services.AddIdentityInfrastructure(builder.Configuration);
 builder.Services.AddValidatorsFromAssemblyContaining<RegisterRequestValidator>();
-builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen();
+builder.Services.AddFlashSeatSwagger();
 
 var app = builder.Build();
 if (app.Environment.IsDevelopment())
@@ -25,7 +24,6 @@ app.UseAuthorization();
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
-    app.UseSwaggerUI();
 }
 
 var auth = app.MapGroup("/api/auth").WithTags("Authentication");

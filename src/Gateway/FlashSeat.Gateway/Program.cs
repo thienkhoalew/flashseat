@@ -27,6 +27,16 @@ builder.Services.AddReverseProxy().LoadFromConfig(builder.Configuration.GetSecti
 
 var app = builder.Build();
 app.UseFlashSeatDefaults();
+if (app.Environment.IsDevelopment())
+{
+    app.UseSwaggerUI(options =>
+    {
+        options.SwaggerEndpoint("/swagger/identity/swagger.json", "Identity");
+        options.SwaggerEndpoint("/swagger/events/swagger.json", "Events");
+        options.SwaggerEndpoint("/swagger/booking/swagger.json", "Booking");
+        options.SwaggerEndpoint("/swagger/payment/swagger.json", "Payment");
+    });
+}
 app.Use(async (context, next) =>
 {
     const string header = "X-Correlation-ID";

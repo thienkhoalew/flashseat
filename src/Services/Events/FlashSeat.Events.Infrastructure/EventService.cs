@@ -56,12 +56,16 @@ public sealed class EventService(EventsDbContext dbContext, BookingInventoryClie
     {
         var entity = await dbContext.Events.Include(x => x.Seats).SingleOrDefaultAsync(x => x.Id == eventId, cancellationToken);
         if (entity is null) return null;
+        await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
         entity.Update(request.Name, request.Slug, request.Description, request.ImageUrl, request.VenueName,
             request.Address, request.StartsAt, request.SalesStartAt, request.SalesEndAt, timeProvider.GetUtcNow());
         dbContext.Seats.RemoveRange(entity.Seats);
-        foreach (var seat in request.Seats)
-            entity.Seats.Add(new Seat(Guid.NewGuid(), entity.Id, seat.Section, seat.Row, seat.Number, seat.Price, seat.Currency));
         await dbContext.SaveChangesAsync(cancellationToken);
+        dbContext.ChangeTracker.Clear();
+        foreach (var seat in request.Seats)
+            dbContext.Seats.Add(new Seat(Guid.NewGuid(), eventId, seat.Section, seat.Row, seat.Number, seat.Price, seat.Currency));
+        await dbContext.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
         return await GetEventAsync(entity.Id, true, cancellationToken);
     }
 

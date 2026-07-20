@@ -32,9 +32,9 @@ public sealed class PaymentService(PaymentDbContext db, IPublishEndpoint publish
         if (!bookingResponse.IsSuccessStatusCode) return new(null, true);
         var booking = await bookingResponse.Content.ReadFromJsonAsync<BookingSnapshot>(cancellationToken)
             ?? throw new InvalidOperationException("Booking response is invalid.");
-        if (booking.UserId != userId || booking.Status != "PendingPayment") return new(null, true);
-
         var now = timeProvider.GetUtcNow();
+        if (booking.UserId != userId || booking.Status != "PendingPayment" || booking.PaymentDueAt <= now) return new(null, true);
+
         var entity = new global::FlashSeat.Payment.Domain.Payment(Guid.NewGuid(), request.BookingId, userId, booking.TotalAmount, booking.Currency, idempotencyKey, fingerprint, now);
         entity.Complete(request.SimulateResult == "Success", now);
         db.Payments.Add(entity);
@@ -62,5 +62,5 @@ public sealed class PaymentService(PaymentDbContext db, IPublishEndpoint publish
         await db.Payments.AsNoTracking().Where(x => x.Id == paymentId && (isAdmin || x.UserId == userId))
             .Select(x => new PaymentResponse(x.Id, x.BookingId, x.Amount, x.Currency, x.Status.ToString(), x.FailureReason, x.CreatedAt, x.CompletedAt)).SingleOrDefaultAsync(cancellationToken);
     private static PaymentResponse ToResponse(global::FlashSeat.Payment.Domain.Payment x) => new(x.Id, x.BookingId, x.Amount, x.Currency, x.Status.ToString(), x.FailureReason, x.CreatedAt, x.CompletedAt);
-    private sealed record BookingSnapshot(Guid Id, Guid UserId, decimal TotalAmount, string Currency, string Status);
+    private sealed record BookingSnapshot(Guid Id, Guid UserId, decimal TotalAmount, string Currency, string Status, DateTimeOffset PaymentDueAt);
 }

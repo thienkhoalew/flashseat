@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.OpenApi.Models;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
@@ -39,6 +40,31 @@ public static class ServiceDefaults
 
         builder.Services.AddHealthChecks();
         return builder;
+    }
+
+    public static IServiceCollection AddFlashSeatSwagger(this IServiceCollection services)
+    {
+        services.AddEndpointsApiExplorer();
+        services.AddSwaggerGen(options =>
+        {
+            var scheme = new OpenApiSecurityScheme
+            {
+                Name = "Authorization",
+                Description = "Enter a JWT bearer token.",
+                In = ParameterLocation.Header,
+                Type = SecuritySchemeType.Http,
+                Scheme = "bearer",
+                BearerFormat = "JWT",
+                Reference = new OpenApiReference
+                {
+                    Type = ReferenceType.SecurityScheme,
+                    Id = "Bearer"
+                }
+            };
+            options.AddSecurityDefinition("Bearer", scheme);
+            options.AddSecurityRequirement(new OpenApiSecurityRequirement { [scheme] = [] });
+        });
+        return services;
     }
 
     public static WebApplication UseFlashSeatDefaults(this WebApplication app)

@@ -11,7 +11,8 @@ public sealed record HoldResponse(Guid Id, Guid EventId, string Status, DateTime
 public sealed record BookingItemResponse(Guid SeatId, string Section, string Row, int Number, decimal Price);
 public sealed record BookingResponse(Guid Id, string BookingNumber, Guid EventId, string Status,
     decimal TotalAmount, string Currency, DateTimeOffset CreatedAt, IReadOnlyCollection<BookingItemResponse> Items);
-public sealed record HoldAttemptResult(HoldResponse? Hold, IReadOnlyCollection<Guid> UnavailableSeatIds);
+public enum HoldAttemptFailure { SeatsUnavailable, ActiveHoldExists, LockContention }
+public sealed record HoldAttemptResult(HoldResponse? Hold, IReadOnlyCollection<Guid> UnavailableSeatIds, HoldAttemptFailure? Failure = null);
 
 public interface IBookingService
 {

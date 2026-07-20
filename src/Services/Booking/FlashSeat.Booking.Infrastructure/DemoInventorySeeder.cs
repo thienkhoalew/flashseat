@@ -10,9 +10,13 @@ public static class DemoInventorySeeder
     {
         await using var scope = services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<BookingDbContext>();
-        if (await db.Inventory.AnyAsync(cancellationToken)) return;
+        var existing = await db.Inventory.AsNoTracking()
+            .Select(x => new { x.EventId, x.SeatId })
+            .ToListAsync(cancellationToken);
+        var knownSeats = existing.Select(x => (x.EventId, x.SeatId)).ToHashSet();
 
         using var client = new HttpClient { BaseAddress = new Uri("http://events-api:8080") };
+        // ponytail: demo catalog stays below the Events API page limit; paginate when fixtures exceed 50.
         var events = await client.GetFromJsonAsync<EventPage>("/api/events?pageSize=50", cancellationToken);
         if (events is null) return;
         foreach (var item in events.Items)
@@ -20,7 +24,11 @@ public static class DemoInventorySeeder
             var detail = await client.GetFromJsonAsync<EventDetail>($"/api/events/{item.Id}", cancellationToken);
             if (detail is null) continue;
             foreach (var seat in detail.Seats)
-                db.Inventory.Add(new Domain.EventSeatInventory(Guid.NewGuid(), detail.Id, seat.Id, seat.Section, seat.Row, seat.Number, seat.Price, seat.Currency));
+            {
+                if (!knownSeats.Add((detail.Id, seat.Id))) continue;
+                db.Inventory.Add(new Domain.EventSeatInventory(Guid.NewGuid(), detail.Id, seat.Id, seat.Section,
+                    seat.Row, seat.Number, seat.Price, seat.Currency));
+            }
         }
         await db.SaveChangesAsync(cancellationToken);
     }

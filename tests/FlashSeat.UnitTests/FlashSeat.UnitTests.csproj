@@ -7,7 +7,11 @@
     <ProjectReference Include="..\..\src\Services\Identity\FlashSeat.Identity.Application\FlashSeat.Identity.Application.csproj" />
     <ProjectReference Include="..\..\src\Services\Events\FlashSeat.Events.Application\FlashSeat.Events.Application.csproj" />
     <ProjectReference Include="..\..\src\Services\Booking\FlashSeat.Booking.Application\FlashSeat.Booking.Application.csproj" />
+    <ProjectReference Include="..\..\src\Services\Booking\FlashSeat.Booking.Domain\FlashSeat.Booking.Domain.csproj" />
+    <ProjectReference Include="..\..\src\Services\Booking\FlashSeat.Booking.Infrastructure\FlashSeat.Booking.Infrastructure.csproj" />
     <PackageReference Include="FluentAssertions" />
+    <PackageReference Include="Testcontainers.PostgreSql" />
+    <PackageReference Include="Testcontainers.Redis" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="xunit" />
     <PackageReference Include="xunit.runner.visualstudio">

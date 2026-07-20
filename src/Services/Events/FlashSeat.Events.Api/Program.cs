@@ -7,15 +7,14 @@ var builder = WebApplication.CreateBuilder(args);
 builder.AddFlashSeatDefaults();
 builder.Services.AddEventsInfrastructure(builder.Configuration);
 builder.Services.AddValidatorsFromAssemblyContaining<SaveEventRequestValidator>();
-builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen();
+builder.Services.AddFlashSeatSwagger();
 
 var app = builder.Build();
 if (app.Environment.IsDevelopment()) await app.Services.SeedEventsAsync();
 app.UseFlashSeatDefaults();
 app.UseAuthentication();
 app.UseAuthorization();
-if (app.Environment.IsDevelopment()) { app.UseSwagger(); app.UseSwaggerUI(); }
+if (app.Environment.IsDevelopment()) app.UseSwagger();
 
 app.MapGet("/api/events", async (string? search, DateTimeOffset? from, DateTimeOffset? to, int? page,
     int? pageSize, string? sort, IEventService service, CancellationToken cancellationToken) =>
@@ -38,6 +37,9 @@ var admin = app.MapGroup("/api/admin/events").RequireAuthorization(policy => pol
 admin.MapGet("/", async (string? search, int page, int pageSize, IEventService service, CancellationToken cancellationToken) =>
     Results.Ok(await service.GetEventsAsync(search, null, null, Math.Max(1, page == 0 ? 1 : page),
         Math.Clamp(pageSize == 0 ? 12 : pageSize, 1, 50), "createdAt", true, cancellationToken)));
+admin.MapGet("/{eventId:guid}", async (Guid eventId, IEventService service, CancellationToken cancellationToken) =>
+    await service.GetEventAsync(eventId, true, cancellationToken) is { } result
+        ? Results.Ok(result) : Results.NotFound());
 
 admin.MapPost("/", async (SaveEventRequest request, IValidator<SaveEventRequest> validator,
     IEventService service, CancellationToken cancellationToken) =>
@@ -45,7 +47,7 @@ admin.MapPost("/", async (SaveEventRequest request, IValidator<SaveEventRequest>
     var validation = await validator.ValidateAsync(request, cancellationToken);
     if (!validation.IsValid) return Results.ValidationProblem(validation.ToDictionary());
     var result = await service.CreateAsync(request, cancellationToken);
-    return result is null ? Results.Conflict() : Results.Created($"/api/events/{result.Id}", result);
+    return result is null ? Results.Conflict() : Results.Created($"/api/admin/events/{result.Id}", result);
 });
 
 admin.MapPut("/{eventId:guid}", async (Guid eventId, SaveEventRequest request,

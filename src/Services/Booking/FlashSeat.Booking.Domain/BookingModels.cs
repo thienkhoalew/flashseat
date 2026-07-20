@@ -21,8 +21,10 @@ public sealed class EventSeatInventory
     public Guid? HoldId { get; private set; }
     public DateTimeOffset? HoldExpiresAt { get; private set; }
     public Guid? BookingId { get; private set; }
-    public void Book(Guid bookingId) { Status = SeatInventoryStatus.Booked; BookingId = bookingId; HoldId = null; HoldExpiresAt = null; }
-    public void Release() { if (Status != SeatInventoryStatus.Booked) { Status = SeatInventoryStatus.Available; HoldId = null; HoldExpiresAt = null; BookingId = null; } }
+    public void Hold(Guid holdId, DateTimeOffset expiresAt) { if (Status != SeatInventoryStatus.Available) throw new InvalidOperationException(); Status = SeatInventoryStatus.Held; HoldId = holdId; HoldExpiresAt = expiresAt; }
+    public void AssignBooking(Guid holdId, Guid bookingId) { if (Status != SeatInventoryStatus.Held || HoldId != holdId) throw new InvalidOperationException(); BookingId = bookingId; }
+    public void Book(Guid bookingId) { if (Status != SeatInventoryStatus.Held || BookingId != bookingId) return; Status = SeatInventoryStatus.Booked; HoldId = null; HoldExpiresAt = null; }
+    public void Release(Guid holdId, Guid? bookingId = null) { if (Status == SeatInventoryStatus.Held && HoldId == holdId && BookingId == bookingId) { Status = SeatInventoryStatus.Available; HoldId = null; HoldExpiresAt = null; BookingId = null; } }
 }
 
 public sealed class SeatHold
@@ -38,7 +40,7 @@ public sealed class SeatHold
     public DateTimeOffset CreatedAt { get; private set; }
     public ICollection<SeatHoldItem> Items { get; } = [];
     public void Convert() { if (Status != SeatHoldStatus.Active) throw new InvalidOperationException(); Status = SeatHoldStatus.Converted; }
-    public void Expire() { if (Status == SeatHoldStatus.Active) Status = SeatHoldStatus.Expired; }
+    public void Expire() { if (Status is SeatHoldStatus.Active or SeatHoldStatus.Converted) Status = SeatHoldStatus.Expired; }
     public void Release() { if (Status == SeatHoldStatus.Active) Status = SeatHoldStatus.Released; }
 }
 
@@ -69,8 +71,9 @@ public sealed class Booking
     public DateTimeOffset CreatedAt { get; private set; }
     public DateTimeOffset? ConfirmedAt { get; private set; }
     public ICollection<BookingItem> Items { get; } = [];
-    public void Confirm(Guid paymentId, DateTimeOffset now) { Status = BookingStatus.Confirmed; PaymentId = paymentId; ConfirmedAt = now; }
-    public void Cancel() => Status = BookingStatus.Cancelled;
+    public void Confirm(Guid paymentId, DateTimeOffset now) { if (Status != BookingStatus.PendingPayment) return; Status = BookingStatus.Confirmed; PaymentId = paymentId; ConfirmedAt = now; }
+    public void Cancel() { if (Status == BookingStatus.PendingPayment) Status = BookingStatus.Cancelled; }
+    public void Expire() { if (Status == BookingStatus.PendingPayment) Status = BookingStatus.Expired; }
 }
 
 public sealed class BookingItem
