@@ -33,7 +33,7 @@ function Layout() {
       <Link className="brand" to="/" aria-label="FlashSeat home"><span>FS</span><b>FlashSeat</b></Link>
       <nav aria-label="Main navigation">
         <NavLink className={navClass} to="/" end>Events</NavLink>
-        {user.data?.role === 'Customer' && <NavLink className={navClass} to="/bookings">My tickets</NavLink>}
+        {user.data && <NavLink className={navClass} to="/bookings">My tickets</NavLink>}
         {user.data?.role === 'Admin' && <NavLink className={navClass} to="/admin/events">Admin</NavLink>}
         {authenticated
           ? <button className="ghost" onClick={() => { logout(); qc.removeQueries({ queryKey: ['current-user'] }); nav('/login'); }}>Sign out</button>

@@ -120,12 +120,21 @@ export function AuthPage() {
     }
     mutation.mutate(value);
   };
+  const fillDemoAccount = (email: string, password: string) => {
+    form.reset({ fullName: '', email, password });
+    mutation.reset();
+  };
 
   return <section className="auth">
     <div className="auth-intro"><p className="kicker">YOUR BOX OFFICE</p><h1>One account.<br />Every ticket.</h1><p>Book exact seats and find confirmed tickets whenever you need them.</p></div>
     <div className="auth-panel">
       <p className="kicker">{register ? 'NEW CUSTOMER' : 'WELCOME BACK'}</p>
       <h2>{register ? 'Create your account' : 'Sign in to continue'}</h2>
+      {!register && <section className="demo-accounts" aria-labelledby="demo-accounts-heading">
+        <h3 id="demo-accounts-heading">Demo accounts</h3>
+        <button type="button" className="ghost" onClick={() => fillDemoAccount('demo@flashseat.dev', 'Demo@123456')}><strong>Customer</strong><span>demo@flashseat.dev / Demo@123456</span></button>
+        <button type="button" className="ghost" onClick={() => fillDemoAccount('admin@flashseat.dev', 'Admin@123456')}><strong>Admin</strong><span>admin@flashseat.dev / Admin@123456</span></button>
+      </section>}
       <form onSubmit={form.handleSubmit(submit)}>
         {register && <div className="auth-field"><label>Full name<input autoComplete="name" aria-invalid={!!form.formState.errors.fullName} aria-describedby={form.formState.errors.fullName ? 'full-name-error' : undefined} {...form.register('fullName')} /></label>{form.formState.errors.fullName && <small id="full-name-error">{form.formState.errors.fullName.message}</small>}</div>}
         <div className="auth-field"><label>Email<input type="email" autoComplete="email" aria-invalid={!!form.formState.errors.email} aria-describedby={form.formState.errors.email ? 'email-error' : undefined} {...form.register('email')} /></label>{form.formState.errors.email && <small id="email-error">{form.formState.errors.email.message}</small>}</div>

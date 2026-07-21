@@ -104,6 +104,10 @@ input[aria-invalid="true"], textarea[aria-invalid="true"] { border-color: var(--
 .auth-intro > p:last-child { max-width: 480px; font-size: 1.05rem; line-height: 1.65; }
 .auth-panel { padding: clamp(28px, 5vw, 56px); display: flex; flex-direction: column; justify-content: center; background: var(--paper-light); border-left: 2px solid var(--line); }
 .auth-panel h2 { margin-bottom: 28px; }
+.demo-accounts { display: grid; gap: 8px; margin-bottom: 24px; }
+.demo-accounts h3 { margin: 0 0 4px; }
+.demo-accounts .ghost { min-width: 0; height: auto; padding-block: 10px; display: grid; justify-content: stretch; text-align: left; overflow-wrap: anywhere; }
+.demo-accounts .ghost span { font: .72rem ui-monospace, monospace; color: var(--muted); }
 .auth-panel form { display: grid; gap: 17px; }
 .auth-panel label, .auth-field, .field { display: grid; gap: 7px; font-weight: 750; }
 .auth-panel small, .field small, .error { color: var(--danger); }

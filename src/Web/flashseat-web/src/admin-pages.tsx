@@ -122,6 +122,21 @@ function EventFormPage({ event, onSaved }: { event?: EventDetail; onSaved: () =>
     onSuccess: onSaved,
   });
   const inventoryError = typeof form.formState.errors.seats?.message === 'string' ? form.formState.errors.seats.message : undefined;
+  const sameSeatGroup = (left: EventForm['seats'][number], right: EventForm['seats'][number]) =>
+    left.section.trim().toLowerCase() === right.section.trim().toLowerCase() && left.row.trim().toLowerCase() === right.row.trim().toLowerCase();
+  const addSeat = () => {
+    const current = form.getValues('seats');
+    const template = current.at(-1) ?? emptySeat;
+    const nextNumber = Math.max(0, ...current.filter(seat => sameSeatGroup(seat, template)).map(seat => seat.number)) + 1;
+    seats.append({ ...template, number: nextNumber });
+  };
+  const removeSeat = (removedIndex: number) => {
+    const current = form.getValues('seats');
+    const removed = current[removedIndex];
+    let number = 0;
+    seats.replace(current.filter((_, index) => index !== removedIndex)
+      .map(seat => sameSeatGroup(seat, removed) ? { ...seat, number: ++number } : seat));
+  };
 
   return <section className="admin-page">
     <p className="kicker">BOX OFFICE ADMIN</p><h1>{event ? 'Edit event' : 'Create event'}</h1>
@@ -144,7 +159,7 @@ function EventFormPage({ event, onSaved }: { event?: EventDetail; onSaved: () =>
           <Field label="Sales end" error={form.formState.errors.salesEndAt?.message}><input type="datetime-local" {...form.register('salesEndAt')} /></Field>
         </div></fieldset>
         <fieldset className="seat-editor" aria-invalid={!!inventoryError} aria-describedby={inventoryError ? 'seat-inventory-error' : undefined}><legend>Seat inventory</legend>
-          <div className="section-head"><div><h2>{seats.fields.length} seat{seats.fields.length === 1 ? '' : 's'}</h2><p>Each section, row and number combination must be unique.</p></div><button type="button" className="ghost" onClick={() => seats.append({ ...emptySeat, number: seats.fields.length + 1 })}>Add seat</button></div>
+          <div className="section-head"><div><h2>{seats.fields.length} seat{seats.fields.length === 1 ? '' : 's'}</h2><p>Each section, row and number combination must be unique.</p></div><button type="button" className="ghost" onClick={addSeat}>Add seat</button></div>
           <div className="seat-table-head" aria-hidden="true"><span>Section</span><span>Row</span><span>Number</span><span>Price</span><span>Currency</span><span /></div>
           {seats.fields.map((seat, index) => <div className="seat-row" key={seat.id}>
             <Field label="Section" error={form.formState.errors.seats?.[index]?.section?.message}><input {...form.register(`seats.${index}.section`)} /></Field>
@@ -152,7 +167,7 @@ function EventFormPage({ event, onSaved }: { event?: EventDetail; onSaved: () =>
             <Field label="Number" error={form.formState.errors.seats?.[index]?.number?.message}><input type="number" {...form.register(`seats.${index}.number`, { valueAsNumber: true })} /></Field>
             <Field label="Price" error={form.formState.errors.seats?.[index]?.price?.message}><input type="number" step="0.01" {...form.register(`seats.${index}.price`, { valueAsNumber: true })} /></Field>
             <Field label="Currency" error={form.formState.errors.seats?.[index]?.currency?.message}><input maxLength={3} {...form.register(`seats.${index}.currency`)} /></Field>
-            <button type="button" className="danger" disabled={seats.fields.length === 1} onClick={() => seats.remove(index)}>Remove</button>
+            <button type="button" className="danger" disabled={seats.fields.length === 1} onClick={() => removeSeat(index)}>Remove</button>
           </div>)}
           {inventoryError && <p id="seat-inventory-error" className="error" role="alert">{inventoryError}</p>}
         </fieldset>

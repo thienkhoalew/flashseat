@@ -24,6 +24,18 @@ describe('AuthPage',()=>{
     expect(screen.getByRole('button',{name:'Sign in'})).toBeInTheDocument();
   });
 
+  it('fills demo credentials without signing in',()=>{
+    const login=vi.spyOn(api,'login');
+    renderWithQuery(<AuthPage/>);
+    fireEvent.click(screen.getByRole('button',{name:/Customer demo@flashseat.dev/}));
+    expect(screen.getByLabelText('Email')).toHaveValue('demo@flashseat.dev');
+    expect(screen.getByLabelText('Password')).toHaveValue('Demo@123456');
+    fireEvent.click(screen.getByRole('button',{name:/Admin admin@flashseat.dev/}));
+    expect(screen.getByLabelText('Email')).toHaveValue('admin@flashseat.dev');
+    expect(screen.getByLabelText('Password')).toHaveValue('Admin@123456');
+    expect(login).not.toHaveBeenCalled();
+  });
+
   it('requires a full name when registering',async()=>{
     renderWithQuery(<AuthPage/>);
     fireEvent.click(screen.getByRole('button',{name:'Need an account? Register'}));
@@ -54,12 +66,14 @@ describe('Role routes',()=>{
     expect(await screen.findByRole('heading',{name:'Sign in to continue'})).toBeInTheDocument();
   });
 
-  it('lets an admin use authenticated customer routes',async()=>{
+  it('shows an admin their My tickets navigation and page',async()=>{
     saveAuth({accessToken:'token',accessTokenExpiresAt:'2026-08-01',refreshToken:'refresh',refreshTokenExpiresAt:'2026-08-01'});
     vi.spyOn(api,'me').mockResolvedValue({id:'1',email:'admin@example.com',fullName:'Admin',role:'Admin'});
     vi.spyOn(api,'bookings').mockResolvedValue([]);
     renderWithQuery(<MemoryRouter initialEntries={['/bookings']}><App/></MemoryRouter>,false);
     expect(await screen.findByRole('heading',{name:'My tickets'})).toBeInTheDocument();
+    expect(screen.getByRole('link',{name:'My tickets'})).toBeInTheDocument();
+    expect(screen.getByRole('link',{name:'Admin'})).toBeInTheDocument();
   });
 });
 
@@ -77,6 +91,31 @@ describe('AdminEventFormPage',()=>{
     fireEvent.click(screen.getByRole('button',{name:'Add seat'}));
     expect(screen.getAllByLabelText('Section')).toHaveLength(2);
     expect(screen.getByRole('button',{name:'Save draft'})).toBeInTheDocument();
+  });
+
+  it('renumbers seats after removing one',()=>{
+    const queryClient=new QueryClient({defaultOptions:{queries:{retry:false},mutations:{retry:false}}});
+    render(<QueryClientProvider client={queryClient}><MemoryRouter initialEntries={['/admin/events/new']}><Routes><Route path="/admin/events/new" element={<AdminEventFormPage/>}/></Routes></MemoryRouter></QueryClientProvider>);
+    for(let index=1;index<6;index++) fireEvent.click(screen.getByRole('button',{name:'Add seat'}));
+    fireEvent.click(screen.getAllByRole('button',{name:'Remove'})[4]);
+    expect(screen.getAllByLabelText('Number')).toHaveLength(5);
+    expect(screen.getAllByLabelText('Number').map(input=>(input as HTMLInputElement).value)).toEqual(['1','2','3','4','5']);
+    fireEvent.click(screen.getByRole('button',{name:'Add seat'}));
+    expect(screen.getAllByLabelText('Number').map(input=>(input as HTMLInputElement).value)).toEqual(['1','2','3','4','5','6']);
+  });
+
+  it('numbers seats independently for each row',()=>{
+    const queryClient=new QueryClient({defaultOptions:{queries:{retry:false},mutations:{retry:false}}});
+    render(<QueryClientProvider client={queryClient}><MemoryRouter initialEntries={['/admin/events/new']}><Routes><Route path="/admin/events/new" element={<AdminEventFormPage/>}/></Routes></MemoryRouter></QueryClientProvider>);
+    fireEvent.click(screen.getByRole('button',{name:'Add seat'}));
+    fireEvent.change(screen.getAllByLabelText('Row')[1],{target:{value:'B'}});
+    fireEvent.change(screen.getAllByLabelText('Number')[1],{target:{value:'1'}});
+    fireEvent.click(screen.getByRole('button',{name:'Add seat'}));
+    expect(screen.getAllByLabelText('Row').map(input=>(input as HTMLInputElement).value)).toEqual(['A','B','B']);
+    expect(screen.getAllByLabelText('Number').map(input=>(input as HTMLInputElement).value)).toEqual(['1','1','2']);
+    fireEvent.click(screen.getAllByRole('button',{name:'Remove'})[1]);
+    expect(screen.getAllByLabelText('Row').map(input=>(input as HTMLInputElement).value)).toEqual(['A','B']);
+    expect(screen.getAllByLabelText('Number').map(input=>(input as HTMLInputElement).value)).toEqual(['1','1']);
   });
 });
 
