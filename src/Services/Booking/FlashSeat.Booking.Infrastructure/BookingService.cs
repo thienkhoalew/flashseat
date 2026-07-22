@@ -1,10 +1,13 @@
 using FlashSeat.Booking.Application;
 using FlashSeat.Booking.Domain;
+using System.Net;
+using System.Net.Http.Json;
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 
 namespace FlashSeat.Booking.Infrastructure;
 
-public sealed class BookingService(BookingDbContext db, RedisSeatLock seatLock, TimeProvider timeProvider) : IBookingService
+public sealed class BookingService(BookingDbContext db, RedisSeatLock seatLock, EventsClient eventsClient, TimeProvider timeProvider) : IBookingService
 {
     public async Task<IReadOnlyCollection<SeatAvailabilityResponse>> GetAvailabilityAsync(Guid eventId, CancellationToken cancellationToken)
     {
@@ -18,10 +21,20 @@ public sealed class BookingService(BookingDbContext db, RedisSeatLock seatLock, 
 
     public async Task<HoldAttemptResult> CreateHoldAsync(Guid userId, CreateHoldRequest request, CancellationToken cancellationToken)
     {
+        EventSalesWindow? salesWindow;
+        try { salesWindow = await eventsClient.GetSalesWindowAsync(request.EventId, cancellationToken); }
+        catch (Exception exception) when (exception is HttpRequestException or NotSupportedException or JsonException)
+        {
+            return new(null, [], HoldAttemptFailure.SalesWindowUnavailable);
+        }
+        if (salesWindow is null || !salesWindow.IsOpen(timeProvider.GetUtcNow()))
+            return new(null, [], HoldAttemptFailure.SalesNotOpen);
+
         var seatIds = request.SeatIds.Order().ToArray();
         await using var lease = await seatLock.AcquireAsync(request.EventId, seatIds);
         if (lease is null) return new(null, [], HoldAttemptFailure.LockContention);
         var now = timeProvider.GetUtcNow();
+        if (!salesWindow.IsOpen(now)) return new(null, [], HoldAttemptFailure.SalesNotOpen);
         if (await db.Holds.AnyAsync(x => x.UserId == userId && x.EventId == request.EventId &&
             x.Status == SeatHoldStatus.Active && x.ExpiresAt > now, cancellationToken))
             return new(null, [], HoldAttemptFailure.ActiveHoldExists);
@@ -149,4 +162,21 @@ public sealed class BookingService(BookingDbContext db, RedisSeatLock seatLock, 
     private static System.Linq.Expressions.Expression<Func<global::FlashSeat.Booking.Domain.Booking, BookingResponse>> ToBookingExpression() => x =>
         new BookingResponse(x.Id, x.BookingNumber, x.EventId, x.Status.ToString(), x.TotalAmount, x.Currency, x.CreatedAt,
             x.Items.Select(i => new BookingItemResponse(i.SeatId, i.Section, i.Row, i.Number, i.Price)).ToList());
+}
+
+public sealed class EventsClient(HttpClient client)
+{
+    public async Task<EventSalesWindow?> GetSalesWindowAsync(Guid eventId, CancellationToken cancellationToken)
+    {
+        using var response = await client.GetAsync($"/api/events/{eventId}", cancellationToken);
+        if (response.StatusCode == HttpStatusCode.NotFound) return null;
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<EventSalesWindow>(cancellationToken)
+            ?? throw new HttpRequestException("Events service returned an invalid sales window.");
+    }
+}
+
+public sealed record EventSalesWindow(DateTimeOffset SalesStartAt, DateTimeOffset SalesEndAt)
+{
+    public bool IsOpen(DateTimeOffset now) => SalesStartAt <= now && now < SalesEndAt;
 }

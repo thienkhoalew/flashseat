@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AdminEventFormPage } from './admin-pages';
 import { ApiError, api, logout, saveAuth } from './api';
 import App from './App';
-import { AuthPage, CheckoutPage, HomePage, MyBookingsPage, SeatPage } from './pages';
+import { AuthPage, CheckoutPage, EventDetailPage, HomePage, MyBookingsPage, SeatPage } from './pages';
 
 vi.mock('@microsoft/signalr',()=>({HubConnectionBuilder:class{
   withUrl(){return this;} withAutomaticReconnect(){return this;}
@@ -14,7 +14,7 @@ vi.mock('@microsoft/signalr',()=>({HubConnectionBuilder:class{
 }}));
 
 const renderWithQuery=(node:ReactNode,router=true)=>{const queryClient=new QueryClient({defaultOptions:{queries:{retry:false},mutations:{retry:false}}});return render(<QueryClientProvider client={queryClient}>{router?<BrowserRouter>{node}</BrowserRouter>:node}</QueryClientProvider>)};
-afterEach(()=>{cleanup();vi.restoreAllMocks();sessionStorage.clear();logout();});
+afterEach(()=>{cleanup();vi.useRealTimers();vi.restoreAllMocks();sessionStorage.clear();logout();});
 
 describe('AuthPage',()=>{
   it('renders English labeled login fields',()=>{
@@ -57,6 +57,27 @@ describe('HomePage',()=>{
     await waitFor(()=>expect(events).toHaveBeenLastCalledWith('',2));
     fireEvent.change(screen.getByLabelText('Search the listings'),{target:{value:'Jazz'}});
     await waitFor(()=>expect(events).toHaveBeenLastCalledWith('Jazz',1));
+  });
+});
+
+describe('EventDetailPage',()=>{
+  it('updates purchase availability at sales boundaries',async()=>{
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-07-22T09:59:59Z'));
+    vi.spyOn(api,'event').mockResolvedValue({id:'event-1',name:'Concert',slug:'concert',description:'Description',imageUrl:'https://example.com/event.jpg',venueName:'Venue',address:'Address',startsAt:'2026-07-22T12:00:00Z',salesStartAt:'2026-07-22T10:00:00Z',salesEndAt:'2026-07-22T11:00:00Z',status:'Published',seats:[{id:'seat-1',section:'Main',row:'A',number:1,price:100,currency:'USD'}]});
+    renderWithQuery(<MemoryRouter initialEntries={['/events/event-1']}><Routes><Route path="/events/:id" element={<EventDetailPage/>}/></Routes></MemoryRouter>,false);
+
+    await vi.waitFor(()=>expect(screen.getByText('SALES OPENING')).toBeInTheDocument());
+    expect(screen.queryByRole('link',{name:'Choose seats'})).not.toBeInTheDocument();
+
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(screen.getByText('NOW BOOKING')).toBeInTheDocument();
+    expect(screen.getByRole('link',{name:'Choose seats'})).toBeInTheDocument();
+
+    await vi.advanceTimersByTimeAsync(60*60*1000);
+    expect(screen.getByText('SALES ENDED')).toBeInTheDocument();
+    expect(screen.getByRole('heading',{name:'Sales ended'})).toBeInTheDocument();
+    expect(screen.queryByRole('link',{name:'Choose seats'})).not.toBeInTheDocument();
   });
 });
 

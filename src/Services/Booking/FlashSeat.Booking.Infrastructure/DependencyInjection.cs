@@ -17,6 +17,7 @@ public static class DependencyInjection
         services.AddDbContext<BookingDbContext>(options => options.UseNpgsql(connectionString));
         services.AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect(redisConnection));
         services.AddSingleton(TimeProvider.System);
+        services.AddHttpClient<EventsClient>(client => client.BaseAddress = new Uri(configuration["Services:Events"] ?? "http://events-api:8080"));
         services.AddScoped<RedisSeatLock>();
         services.AddScoped<IBookingService, BookingService>();
         services.AddHostedService<ExpiredHoldWorker>();

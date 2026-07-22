@@ -33,9 +33,13 @@ app.MapPost("/api/seat-holds", async (CreateHoldRequest request, ClaimsPrincipal
         {
             HoldAttemptFailure.ActiveHoldExists => "You already have an active hold for this event.",
             HoldAttemptFailure.LockContention => "Seat selection is being updated. Try again.",
+            HoldAttemptFailure.SalesNotOpen => "Ticket sales are not open for this event.",
+            HoldAttemptFailure.SalesWindowUnavailable => "Ticket sales are temporarily unavailable. Try again.",
             _ => "Seats unavailable"
         };
-        return Results.Conflict(new { title, unavailableSeatIds = result.UnavailableSeatIds });
+        return result.Failure == HoldAttemptFailure.SalesWindowUnavailable
+            ? Results.Json(new { title, unavailableSeatIds = result.UnavailableSeatIds }, statusCode: StatusCodes.Status503ServiceUnavailable)
+            : Results.Conflict(new { title, unavailableSeatIds = result.UnavailableSeatIds });
     }
     await hub.Clients.Group($"event:{request.EventId:N}").SendAsync("SeatsHeld", new { eventId = request.EventId, seatIds = request.SeatIds, status = "Held", timestamp = DateTimeOffset.UtcNow }, ct);
     return Results.Created($"/api/seat-holds/{result.Hold.Id}", result.Hold);

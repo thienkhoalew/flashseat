@@ -3,6 +3,9 @@ using FlashSeat.Booking.Domain;
 using FlashSeat.Booking.Infrastructure;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
+using System.Net;
+using System.Text;
+using System.Text.Json;
 using StackExchange.Redis;
 using Testcontainers.PostgreSql;
 using Testcontainers.Redis;
@@ -35,8 +38,8 @@ public sealed class BookingConcurrencyTests
         await using var dbB = new BookingDbContext(options);
         var userA = Guid.NewGuid();
         var userB = Guid.NewGuid();
-        var serviceA = new BookingService(dbA, new RedisSeatLock(redisA), TimeProvider.System);
-        var serviceB = new BookingService(dbB, new RedisSeatLock(redisB), TimeProvider.System);
+        var serviceA = new BookingService(dbA, new RedisSeatLock(redisA), OpenSalesClient(), TimeProvider.System);
+        var serviceB = new BookingService(dbB, new RedisSeatLock(redisB), OpenSalesClient(), TimeProvider.System);
         var request = new CreateHoldRequest(eventId, [seatId]);
         var start = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 
@@ -84,8 +87,8 @@ public sealed class BookingConcurrencyTests
         await using var dbB = new BookingDbContext(options);
         var userA = Guid.NewGuid();
         var userB = Guid.NewGuid();
-        var serviceA = new BookingService(dbA, new RedisSeatLock(connection), TimeProvider.System);
-        var serviceB = new BookingService(dbB, new RedisSeatLock(connection), TimeProvider.System);
+        var serviceA = new BookingService(dbA, new RedisSeatLock(connection), OpenSalesClient(), TimeProvider.System);
+        var serviceB = new BookingService(dbB, new RedisSeatLock(connection), OpenSalesClient(), TimeProvider.System);
 
         var winner = await serviceA.CreateHoldAsync(userA, new CreateHoldRequest(eventId, [seats[4], seats[5], seats[6]]), CancellationToken.None);
         var loser = await serviceB.CreateHoldAsync(userB, new CreateHoldRequest(eventId, [seats[5], seats[6], seats[7]]), CancellationToken.None);
@@ -112,10 +115,97 @@ public sealed class BookingConcurrencyTests
         retry.Hold.Should().NotBeNull();
     }
 
+    [Fact]
+    public async Task Sales_window_enforces_boundaries_and_preserves_valid_hold()
+    {
+        await using var postgres = new PostgreSqlBuilder().WithDatabase("flashseat_booking_sales_tests").Build();
+        await using var redis = new RedisBuilder().Build();
+        await Task.WhenAll(postgres.StartAsync(), redis.StartAsync());
+
+        var options = new DbContextOptionsBuilder<BookingDbContext>().UseNpgsql(postgres.GetConnectionString()).Options;
+        var eventId = Guid.NewGuid();
+        var seats = Enumerable.Range(1, 4).Select(_ => Guid.NewGuid()).ToArray();
+        await using (var setup = new BookingDbContext(options))
+        {
+            await setup.Database.EnsureCreatedAsync();
+            setup.Inventory.AddRange(seats.Select((seatId, index) => new EventSeatInventory(Guid.NewGuid(), eventId, seatId, "Main", "A", index + 1, 100, "VND")));
+            await setup.SaveChangesAsync();
+        }
+
+        var start = new DateTimeOffset(2026, 7, 22, 10, 0, 0, TimeSpan.Zero);
+        var end = start.AddHours(1);
+        var clock = new TestTimeProvider(start.AddTicks(-1));
+        await using var connection = await ConnectionMultiplexer.ConnectAsync(redis.GetConnectionString());
+        await using var db = new BookingDbContext(options);
+        var service = new BookingService(db, new RedisSeatLock(connection), SalesClient(start, end), clock);
+
+        var before = await service.CreateHoldAsync(Guid.NewGuid(), new CreateHoldRequest(eventId, [seats[0]]), CancellationToken.None);
+        before.Failure.Should().Be(HoldAttemptFailure.SalesNotOpen);
+
+        clock.UtcNow = start;
+        var atStart = await service.CreateHoldAsync(Guid.NewGuid(), new CreateHoldRequest(eventId, [seats[1]]), CancellationToken.None);
+        atStart.Hold.Should().NotBeNull();
+
+        clock.UtcNow = end.AddTicks(-1);
+        var beforeEndUser = Guid.NewGuid();
+        var beforeEnd = await service.CreateHoldAsync(beforeEndUser, new CreateHoldRequest(eventId, [seats[2]]), CancellationToken.None);
+        beforeEnd.Hold.Should().NotBeNull();
+        beforeEnd.Hold!.ExpiresAt.Should().Be(clock.UtcNow.AddMinutes(5));
+
+        clock.UtcNow = end;
+        var atEnd = await service.CreateHoldAsync(Guid.NewGuid(), new CreateHoldRequest(eventId, [seats[3]]), CancellationToken.None);
+        atEnd.Failure.Should().Be(HoldAttemptFailure.SalesNotOpen);
+
+        clock.UtcNow = end.AddMinutes(1);
+        var booking = await service.CreateBookingAsync(beforeEndUser, new CreateBookingRequest(beforeEnd.Hold.Id), CancellationToken.None);
+        booking.Should().NotBeNull("a hold accepted before sales close keeps its five-minute checkout window");
+
+        await using var verify = new BookingDbContext(options);
+        (await verify.Inventory.SingleAsync(x => x.SeatId == seats[0])).Status.Should().Be(SeatInventoryStatus.Available);
+        (await verify.Inventory.SingleAsync(x => x.SeatId == seats[3])).Status.Should().Be(SeatInventoryStatus.Available);
+    }
+
+    [Fact]
+    public async Task Events_failure_blocks_new_holds()
+    {
+        await using var postgres = new PostgreSqlBuilder().WithDatabase("flashseat_booking_sales_failure_tests").Build();
+        await using var redis = new RedisBuilder().Build();
+        await Task.WhenAll(postgres.StartAsync(), redis.StartAsync());
+        var options = new DbContextOptionsBuilder<BookingDbContext>().UseNpgsql(postgres.GetConnectionString()).Options;
+        await using var db = new BookingDbContext(options);
+        await db.Database.EnsureCreatedAsync();
+        await using var connection = await ConnectionMultiplexer.ConnectAsync(redis.GetConnectionString());
+        var service = new BookingService(db, new RedisSeatLock(connection), Client(_ => new HttpResponseMessage(HttpStatusCode.ServiceUnavailable)), TimeProvider.System);
+
+        var result = await service.CreateHoldAsync(Guid.NewGuid(), new CreateHoldRequest(Guid.NewGuid(), [Guid.NewGuid()]), CancellationToken.None);
+
+        result.Failure.Should().Be(HoldAttemptFailure.SalesWindowUnavailable);
+        (await db.Holds.CountAsync()).Should().Be(0);
+    }
+
+    private static EventsClient OpenSalesClient() => SalesClient(DateTimeOffset.MinValue, DateTimeOffset.MaxValue);
+    private static EventsClient SalesClient(DateTimeOffset start, DateTimeOffset end) => Client(_ => new HttpResponseMessage(HttpStatusCode.OK)
+    {
+        Content = new StringContent(JsonSerializer.Serialize(new { salesStartAt = start, salesEndAt = end }), Encoding.UTF8, "application/json")
+    });
+    private static EventsClient Client(Func<HttpRequestMessage, HttpResponseMessage> response) =>
+        new(new HttpClient(new TestHandler(response)) { BaseAddress = new Uri("http://events.test") });
+
     private static ConfigurationOptions RedisOptions(string connectionString, int database)
     {
         var options = ConfigurationOptions.Parse(connectionString);
         options.DefaultDatabase = database;
         return options;
+    }
+
+    private sealed class TestHandler(Func<HttpRequestMessage, HttpResponseMessage> response) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) => Task.FromResult(response(request));
+    }
+
+    private sealed class TestTimeProvider(DateTimeOffset utcNow) : TimeProvider
+    {
+        public DateTimeOffset UtcNow { get; set; } = utcNow;
+        public override DateTimeOffset GetUtcNow() => UtcNow;
     }
 }

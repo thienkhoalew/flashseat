@@ -64,17 +64,32 @@ export function HomePage() {
 
 export function EventDetailPage() {
   const { id = '' } = useParams();
+  const [now, setNow] = useState(Date.now());
   const query = useQuery({ queryKey: ['event', id], queryFn: () => api.event(id) });
-  if (query.isLoading) return <Skeleton />;
-  if (!query.data) return <ErrorState message="This event couldn't be loaded." retry={() => query.refetch()} />;
-
   const event = query.data;
+
+  useEffect(() => {
+    if (!event) return;
+    const current = Date.now();
+    const boundary = current < Date.parse(event.salesStartAt) ? Date.parse(event.salesStartAt) : Date.parse(event.salesEndAt);
+    if (boundary <= current) return;
+    const timer = window.setTimeout(() => setNow(Date.now()), Math.min(boundary - current, 2_147_483_647));
+    return () => window.clearTimeout(timer);
+  }, [event, now]);
+
+  if (query.isLoading) return <Skeleton />;
+  if (!event) return <ErrorState message="This event couldn't be loaded." retry={() => query.refetch()} />;
+
+  const salesStart = Date.parse(event.salesStartAt);
+  const salesEnd = Date.parse(event.salesEndAt);
+  const salesOpen = salesStart <= now && now < salesEnd;
+  const salesPending = now < salesStart;
   const minSeat = event.seats.reduce<Seat | undefined>((lowest, seat) => !lowest || seat.price < lowest.price ? seat : lowest, undefined);
   return <section className="detail">
     <div className="detail-hero">
       <div className="detail-media"><img src={event.imageUrl} alt="" /></div>
       <div className="detail-copy">
-        <p className="kicker">NOW BOOKING</p>
+        <p className="kicker">{salesPending ? 'SALES OPENING' : salesOpen ? 'NOW BOOKING' : 'SALES ENDED'}</p>
         <p className="mono">{date(event.startsAt)}</p>
         <h1>{event.name}</h1>
         <dl className="event-facts">
@@ -82,12 +97,12 @@ export function EventDetailPage() {
           <div><dt>Address</dt><dd>{event.address}</dd></div>
           <div><dt>Tickets</dt><dd>{minSeat ? `From ${money(minSeat.price, minSeat.currency)}` : 'Unavailable'}</dd></div>
         </dl>
-        <Link className="button" to={`/events/${event.id}/seats`}>Choose seats</Link>
+        {salesOpen && <Link className="button" to={`/events/${event.id}/seats`}>Choose seats</Link>}
       </div>
     </div>
     <div className="detail-notes">
       <div><p className="kicker">ABOUT</p><h2>What to expect</h2><p>{event.description}</p></div>
-      <aside><p className="kicker">TICKET SALES</p><h2>Book before</h2><p className="mono">{date(event.salesEndAt)}</p><p>Seat availability updates live while you browse.</p></aside>
+      <aside><p className="kicker">TICKET SALES</p><h2>{salesPending ? 'Sales open' : salesOpen ? 'Book before' : 'Sales ended'}</h2><p className="mono">{date(salesPending ? event.salesStartAt : event.salesEndAt)}</p><p>{salesOpen ? 'Seat availability updates live while you browse.' : salesPending ? 'Booking will become available at the time shown above.' : 'This event remains available for reference.'}</p></aside>
     </div>
   </section>;
 }
