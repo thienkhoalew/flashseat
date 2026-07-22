@@ -192,7 +192,7 @@ input[aria-invalid="true"], textarea[aria-invalid="true"] { border-color: var(--
 .admin-toolbar, .admin-actions, .pagination { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .admin-toolbar { padding-bottom: 28px; }
 .admin-list { margin: 28px 0; border-top: 2px solid var(--line); }
-.admin-list-head, .admin-row { display: grid; grid-template-columns: 120px minmax(220px, 1fr) minmax(220px, .8fr) 170px minmax(210px, auto); align-items: center; gap: 16px; border-bottom: 1px solid var(--line); }
+.admin-list-head, .admin-row { display: grid; grid-template-columns: 110px minmax(0, 1.2fr) minmax(0, 1fr) 130px 250px; align-items: center; gap: 16px; border-bottom: 1px solid var(--line); }
 .admin-list-head { padding: 10px 14px; color: var(--muted); font: .7rem ui-monospace, monospace; text-transform: uppercase; }
 .admin-row { padding: 16px 14px; background: var(--paper-light); }
 .admin-row:hover { background: white; }
@@ -200,6 +200,9 @@ input[aria-invalid="true"], textarea[aria-invalid="true"] { border-color: var(--
 .admin-row p { margin: 0; color: var(--muted); }
 .admin-cell-label { display: none; }
 .admin-actions { justify-content: flex-end; flex-wrap: wrap; }
+.admin-row > *, .admin-list-head > * { min-width: 0; }
+.admin-row .admin-actions { flex-wrap: nowrap; }
+.admin-row .admin-actions > * { flex: 0 0 auto; white-space: nowrap; }
 .pagination { justify-content: center; margin-top: 24px; }
 
 .event-form { display: grid; gap: 26px; }
@@ -233,7 +236,7 @@ input[aria-invalid="true"], textarea[aria-invalid="true"] { border-color: var(--
   .summary { position: static; }
   .admin-list-head { display: none; }
   .admin-row { grid-template-columns: 110px 1fr; gap: 10px 16px; }
-  .admin-row .admin-actions { grid-column: 1 / -1; justify-content: flex-start; padding-top: 10px; border-top: 1px solid var(--soft-line); }
+  .admin-row .admin-actions { grid-column: 1 / -1; justify-content: flex-start; flex-wrap: wrap; padding-top: 10px; border-top: 1px solid var(--soft-line); }
 }
 
 @media (max-width: 620px) {
