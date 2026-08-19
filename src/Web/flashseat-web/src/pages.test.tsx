@@ -50,7 +50,7 @@ describe('AuthPage',()=>{
 
 describe('HomePage',()=>{
   it('paginates and resets to page one when searching',async()=>{
-    const events=vi.spyOn(api,'events').mockImplementation(async(search,page=1)=>({items:[{id:`event-${page}`,name:search||`Event ${page}`,slug:'event',imageUrl:'https://example.com/event.jpg',venueName:'Venue',startsAt:'2026-08-01T12:00:00Z',minPrice:100,currency:'USD',status:'Published'}],page,pageSize:12,totalCount:24}));
+    const events=vi.spyOn(api,'events').mockImplementation(async(search,page=1)=>({items:[{id:`event-${page}`,name:search||`Event ${page}`,slug:'event',imageUrl:'https://example.com/event.jpg',venueName:'Venue',startsAt:'2026-09-01T12:00:00Z',endsAt:'2026-09-01T14:00:00Z',salesStartAt:'2026-08-01T12:00:00Z',salesEndAt:'2026-09-01T11:00:00Z',minPrice:100,currency:'USD',status:'Published'}],page,pageSize:12,totalCount:24}));
     renderWithQuery(<HomePage/>);
     await screen.findByText('Event 1');
     fireEvent.click(screen.getByRole('button',{name:'Next'}));
@@ -58,26 +58,75 @@ describe('HomePage',()=>{
     fireEvent.change(screen.getByLabelText('Search the listings'),{target:{value:'Jazz'}});
     await waitFor(()=>expect(events).toHaveBeenLastCalledWith('Jazz',1));
   });
+
+  it('opens the event detail page from the event name',async()=>{
+    vi.spyOn(api,'events').mockResolvedValue({items:[{id:'event-1',name:'Morning Show',slug:'morning-show',imageUrl:'https://example.com/event.jpg',venueName:'Venue',startsAt:'2026-08-20T12:00:00Z',endsAt:'2026-08-20T14:00:00Z',salesStartAt:'2026-08-18T10:00:00Z',salesEndAt:'2026-08-20T11:00:00Z',minPrice:100,currency:'USD',status:'Published'}],page:1,pageSize:12,totalCount:1});
+    renderWithQuery(<MemoryRouter initialEntries={['/']}><Routes><Route path="/" element={<HomePage/>}/><Route path="/events/:id" element={<p>Event detail reached</p>}/></Routes></MemoryRouter>,false);
+    const eventCard = await screen.findByRole('link',{name:'View Morning Show'});
+    expect(screen.queryByText('View event')).not.toBeInTheDocument();
+    fireEvent.click(eventCard);
+    expect(await screen.findByText('Event detail reached')).toBeInTheDocument();
+  });
+
+  it('keeps sold-out events visible and gives Sold out precedence',async()=>{
+    vi.spyOn(api,'events').mockResolvedValue({items:[{id:'event-1',name:'Sold Show',slug:'sold-show',imageUrl:'https://example.com/event.jpg',venueName:'Venue',startsAt:'2026-08-20T12:00:00Z',endsAt:'2026-08-20T14:00:00Z',salesStartAt:'2026-08-18T10:00:00Z',salesEndAt:'2026-08-20T11:00:00Z',minPrice:100,currency:'USD',status:'Published',availabilityStatus:'SoldOut',availableSeatCount:0,totalSeatCount:1}],page:1,pageSize:12,totalCount:1});
+    renderWithQuery(<HomePage/>);
+    expect(await screen.findByText('Sold Show')).toBeInTheDocument();
+    expect(screen.getByText('Sold out')).toBeInTheDocument();
+    expect(screen.queryByText('On sale')).not.toBeInTheDocument();
+  });
+
+  it('updates the purchase action when sales open',async()=>{
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-08-18T09:59:59Z'));
+    vi.spyOn(api,'events').mockResolvedValue({items:[{id:'event-1',name:'Morning Show',slug:'morning-show',imageUrl:'https://example.com/event.jpg',venueName:'Venue',startsAt:'2026-08-20T12:00:00Z',endsAt:'2026-08-20T14:00:00Z',salesStartAt:'2026-08-18T10:00:00Z',salesEndAt:'2026-08-20T11:00:00Z',minPrice:100,currency:'USD',status:'Published'}],page:1,pageSize:12,totalCount:1});
+    renderWithQuery(<HomePage/>);
+
+    await vi.waitFor(()=>expect(screen.getByText('Tickets open in 00.00.01')).toBeInTheDocument());
+    const eventCard = screen.getByRole('link',{name:'View Morning Show'});
+    expect(eventCard).toHaveAttribute('href','/events/event-1');
+    expect(screen.queryByText('View event')).not.toBeInTheDocument();
+    expect(screen.queryByRole('link',{name:/Buy ticket/})).not.toBeInTheDocument();
+    expect(screen.queryByRole('link',{name:/events\/event-1\/seats/})).not.toBeInTheDocument();
+
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(screen.getByText('On sale')).toBeInTheDocument();
+    expect(screen.queryByRole('link',{name:/Buy ticket/})).not.toBeInTheDocument();
+    expect(screen.queryByText('Tickets open in 00.00.01')).not.toBeInTheDocument();
+  });
 });
 
 describe('EventDetailPage',()=>{
+  it('hides seat selection for a sold-out event',async()=>{
+    vi.spyOn(api,'event').mockResolvedValue({id:'event-1',name:'Sold Concert',slug:'sold-concert',description:'Description',imageUrl:'https://example.com/event.jpg',venueName:'Venue',address:'Address',startsAt:'2026-07-22T12:00:00Z',endsAt:'2026-07-22T14:00:00Z',salesStartAt:'2026-07-22T10:00:00Z',salesEndAt:'2026-07-22T11:00:00Z',status:'Published',availabilityStatus:'SoldOut',availableSeatCount:0,totalSeatCount:1,seats:[{id:'seat-1',section:'Main',row:'A',number:1,price:100,currency:'USD'}]});
+    renderWithQuery(<MemoryRouter initialEntries={['/events/event-1']}><Routes><Route path="/events/:id" element={<EventDetailPage/>}/></Routes></MemoryRouter>,false);
+    expect(await screen.findByText('SOLD OUT')).toBeInTheDocument();
+    expect(screen.queryByRole('link',{name:'Choose seats for Sold Concert'})).not.toBeInTheDocument();
+  });
+
   it('updates purchase availability at sales boundaries',async()=>{
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-07-22T09:59:59Z'));
-    vi.spyOn(api,'event').mockResolvedValue({id:'event-1',name:'Concert',slug:'concert',description:'Description',imageUrl:'https://example.com/event.jpg',venueName:'Venue',address:'Address',startsAt:'2026-07-22T12:00:00Z',salesStartAt:'2026-07-22T10:00:00Z',salesEndAt:'2026-07-22T11:00:00Z',status:'Published',seats:[{id:'seat-1',section:'Main',row:'A',number:1,price:100,currency:'USD'}]});
+    vi.spyOn(api,'event').mockResolvedValue({id:'event-1',name:'Concert',slug:'concert',description:'Description',imageUrl:'https://example.com/event.jpg',venueName:'Venue',address:'Address',startsAt:'2026-07-22T12:00:00Z',endsAt:'2026-07-22T14:00:00Z',salesStartAt:'2026-07-22T10:00:00Z',salesEndAt:'2026-07-22T11:00:00Z',status:'Published',seats:[{id:'seat-1',section:'Main',row:'A',number:1,price:100,currency:'USD'}]});
     renderWithQuery(<MemoryRouter initialEntries={['/events/event-1']}><Routes><Route path="/events/:id" element={<EventDetailPage/>}/></Routes></MemoryRouter>,false);
 
     await vi.waitFor(()=>expect(screen.getByText('SALES OPENING')).toBeInTheDocument());
-    expect(screen.queryByRole('link',{name:'Choose seats'})).not.toBeInTheDocument();
+    expect(screen.getByRole('heading',{name:'Concert'})).toBeInTheDocument();
+    expect(screen.getByText('Description')).toBeInTheDocument();
+    expect(screen.getAllByText('Venue')).toHaveLength(2);
+    expect(screen.getAllByText('Address')).toHaveLength(2);
+    expect(screen.getByText('Event time')).toBeInTheDocument();
+    expect(screen.getByText('Ticket sales')).toBeInTheDocument();
+    expect(screen.queryByRole('link',{name:'Choose seats for Concert'})).not.toBeInTheDocument();
 
     await vi.advanceTimersByTimeAsync(1000);
     expect(screen.getByText('NOW BOOKING')).toBeInTheDocument();
-    expect(screen.getByRole('link',{name:'Choose seats'})).toBeInTheDocument();
+    expect(screen.getByRole('link',{name:'Choose seats for Concert'})).toHaveAttribute('href','/events/event-1/seats');
 
     await vi.advanceTimersByTimeAsync(60*60*1000);
     expect(screen.getByText('SALES ENDED')).toBeInTheDocument();
     expect(screen.getByRole('heading',{name:'Sales ended'})).toBeInTheDocument();
-    expect(screen.queryByRole('link',{name:'Choose seats'})).not.toBeInTheDocument();
+    expect(screen.queryByRole('link',{name:'Choose seats for Concert'})).not.toBeInTheDocument();
   });
 });
 
@@ -142,7 +191,7 @@ describe('AdminEventFormPage',()=>{
 
 describe('SeatPage',()=>{
   it('removes only overlapping seats and keeps the remaining bill',async()=>{
-    const detail={id:'event-1',name:'Concert',slug:'concert',description:'',imageUrl:'',venueName:'Venue',address:'Address',startsAt:'2026-08-01T12:00:00Z',salesStartAt:'2026-07-01T12:00:00Z',salesEndAt:'2026-08-01T11:00:00Z',status:'Published',seats:[
+    const detail={id:'event-1',name:'Concert',slug:'concert',description:'',imageUrl:'',venueName:'Venue',address:'Address',startsAt:'2026-08-01T12:00:00Z',endsAt:'2026-08-01T14:00:00Z',salesStartAt:'2026-07-01T12:00:00Z',salesEndAt:'2026-08-01T11:00:00Z',status:'Published',seats:[
       {id:'seat-4',section:'Main',row:'A',number:4,price:40,currency:'USD'},
       {id:'seat-5',section:'Main',row:'A',number:5,price:50,currency:'USD'},
       {id:'seat-6',section:'Main',row:'A',number:6,price:60,currency:'USD'},

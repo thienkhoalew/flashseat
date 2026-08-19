@@ -7,8 +7,11 @@ using Microsoft.EntityFrameworkCore;
 
 namespace FlashSeat.Booking.Infrastructure;
 
-public sealed class BookingService(BookingDbContext db, RedisSeatLock seatLock, EventsClient eventsClient, TimeProvider timeProvider) : IBookingService
+public sealed class BookingService(BookingDbContext db, RedisSeatLock seatLock, EventsClient eventsClient, InventorySummaryService inventorySummary, TimeProvider timeProvider) : IBookingService
 {
+    public BookingService(BookingDbContext db, RedisSeatLock seatLock, EventsClient eventsClient, TimeProvider timeProvider)
+        : this(db, seatLock, eventsClient, new InventorySummaryService(db, timeProvider), timeProvider) { }
+
     public async Task<IReadOnlyCollection<SeatAvailabilityResponse>> GetAvailabilityAsync(Guid eventId, CancellationToken cancellationToken)
     {
         var now = timeProvider.GetUtcNow();
@@ -17,6 +20,21 @@ public sealed class BookingService(BookingDbContext db, RedisSeatLock seatLock, 
                 x.Status == SeatInventoryStatus.Held && x.HoldExpiresAt <= now ? "Available" : x.Status.ToString(),
                 x.Status == SeatInventoryStatus.Held && x.HoldExpiresAt > now ? x.HoldExpiresAt : null))
             .ToListAsync(cancellationToken);
+    }
+
+    public async Task<IReadOnlyCollection<EventInventorySummaryResponse>> GetInventorySummariesAsync(IReadOnlyCollection<Guid> eventIds, CancellationToken cancellationToken)
+    {
+        var ids = eventIds.Distinct().Take(100).ToArray();
+        if (ids.Length == 0) return [];
+        var now = timeProvider.GetUtcNow();
+        var summaries = await db.InventorySummaries.AsNoTracking().Where(x => ids.Contains(x.EventId)).ToListAsync(cancellationToken);
+        var expired = await db.Inventory.AsNoTracking().Where(x => ids.Contains(x.EventId) && x.Status == SeatInventoryStatus.Held && x.HoldExpiresAt <= now)
+            .GroupBy(x => x.EventId).Select(x => new { EventId = x.Key, Count = x.Count() }).ToDictionaryAsync(x => x.EventId, cancellationToken);
+        return summaries.Select(x =>
+        {
+            var expiredCount = expired.GetValueOrDefault(x.EventId)?.Count ?? 0;
+            return new EventInventorySummaryResponse(x.EventId, x.TotalSeatCount, x.AvailableSeatCount + expiredCount, x.HeldSeatCount - expiredCount, x.BookedSeatCount, x.InventoryVersion, x.UpdatedAt);
+        }).ToList();
     }
 
     public async Task<HoldAttemptResult> CreateHoldAsync(Guid userId, CreateHoldRequest request, CancellationToken cancellationToken)
@@ -42,6 +60,7 @@ public sealed class BookingService(BookingDbContext db, RedisSeatLock seatLock, 
         var holdId = Guid.NewGuid();
         var expiresAt = now.AddMinutes(5);
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+        var availableBeforeHold = await db.Inventory.CountAsync(x => x.EventId == request.EventId && seatIds.Contains(x.SeatId) && x.Status == SeatInventoryStatus.Available, cancellationToken);
         var affected = await db.Inventory
             .Where(x => x.EventId == request.EventId && seatIds.Contains(x.SeatId) &&
                 (x.Status == SeatInventoryStatus.Available ||
@@ -51,6 +70,8 @@ public sealed class BookingService(BookingDbContext db, RedisSeatLock seatLock, 
                 .SetProperty(x => x.HoldId, holdId)
                 .SetProperty(x => x.HoldExpiresAt, expiresAt)
                 .SetProperty(x => x.BookingId, (Guid?)null), cancellationToken);
+        if (affected == seatIds.Length)
+            await inventorySummary.ApplyDeltaAsync(request.EventId, -availableBeforeHold, availableBeforeHold, 0, cancellationToken);
         if (affected != seatIds.Length)
         {
             await transaction.RollbackAsync(cancellationToken);
@@ -93,6 +114,7 @@ public sealed class BookingService(BookingDbContext db, RedisSeatLock seatLock, 
             .ToListAsync(cancellationToken);
         foreach (var seat in inventory) seat.Release(holdId);
         hold.Release();
+        await inventorySummary.ApplyDeltaAsync(hold.EventId, inventory.Count, -inventory.Count, 0, cancellationToken);
         await db.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
         return true;
@@ -151,6 +173,7 @@ public sealed class BookingService(BookingDbContext db, RedisSeatLock seatLock, 
         foreach (var seat in request.Seats.Where(x => !existing.Contains(x.SeatId)))
             db.Inventory.Add(new EventSeatInventory(Guid.NewGuid(), request.EventId, seat.SeatId, seat.Section, seat.Row, seat.Number, seat.Price, seat.Currency));
         await db.SaveChangesAsync(cancellationToken);
+        await inventorySummary.RebuildAsync(request.EventId, cancellationToken);
     }
 
     private static HoldResponse ToHold(SeatHold hold, IReadOnlyCollection<EventSeatInventory> inventory, DateTimeOffset now) =>

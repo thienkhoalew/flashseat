@@ -3,8 +3,10 @@ namespace FlashSeat.Booking.Application;
 public sealed record CreateHoldRequest(Guid EventId, IReadOnlyCollection<Guid> SeatIds);
 public sealed record CreateBookingRequest(Guid HoldId);
 public sealed record InventoryImportRequest(Guid EventId, IReadOnlyCollection<InventorySeatInput> Seats);
+public sealed record InventorySummaryRequest(IReadOnlyCollection<Guid> EventIds);
 public sealed record InventorySeatInput(Guid SeatId, string Section, string Row, int Number, decimal Price, string Currency);
 public sealed record SeatAvailabilityResponse(Guid SeatId, string Status, DateTimeOffset? HoldExpiresAt);
+public sealed record EventInventorySummaryResponse(Guid EventId, int TotalSeatCount, int AvailableSeatCount, int HeldSeatCount, int BookedSeatCount, long InventoryVersion, DateTimeOffset AvailabilityAsOf);
 public sealed record HoldItemResponse(Guid SeatId, string Section, string Row, int Number, decimal Price);
 public sealed record HoldResponse(Guid Id, Guid EventId, string Status, DateTimeOffset ExpiresAt,
     IReadOnlyCollection<HoldItemResponse> Items, decimal TotalAmount, string Currency);
@@ -17,6 +19,7 @@ public sealed record HoldAttemptResult(HoldResponse? Hold, IReadOnlyCollection<G
 public interface IBookingService
 {
     Task<IReadOnlyCollection<SeatAvailabilityResponse>> GetAvailabilityAsync(Guid eventId, CancellationToken cancellationToken);
+    Task<IReadOnlyCollection<EventInventorySummaryResponse>> GetInventorySummariesAsync(IReadOnlyCollection<Guid> eventIds, CancellationToken cancellationToken);
     Task<HoldAttemptResult> CreateHoldAsync(Guid userId, CreateHoldRequest request, CancellationToken cancellationToken);
     Task<HoldResponse?> GetHoldAsync(Guid userId, Guid holdId, CancellationToken cancellationToken);
     Task<bool> ReleaseHoldAsync(Guid userId, Guid holdId, CancellationToken cancellationToken);

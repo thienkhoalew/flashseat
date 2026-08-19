@@ -5,7 +5,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace FlashSeat.Booking.Infrastructure;
 
-public sealed class PaymentSucceededConsumer(BookingDbContext db, TimeProvider timeProvider) : IConsumer<PaymentSucceededV1>
+public sealed class PaymentSucceededConsumer(BookingDbContext db, InventorySummaryService inventorySummary, TimeProvider timeProvider) : IConsumer<PaymentSucceededV1>
 {
     public async Task Consume(ConsumeContext<PaymentSucceededV1> context)
     {
@@ -20,13 +20,14 @@ public sealed class PaymentSucceededConsumer(BookingDbContext db, TimeProvider t
         if (inventory.Count != booking.Items.Count) return;
         booking.Confirm(message.PaymentId, timeProvider.GetUtcNow());
         foreach (var seat in inventory) seat.Book(booking.Id);
+        await inventorySummary.ApplyDeltaAsync(booking.EventId, 0, -inventory.Count, inventory.Count, context.CancellationToken);
         await db.SaveChangesAsync(context.CancellationToken);
         await context.Publish(new BookingConfirmedV1(Guid.NewGuid(), message.CorrelationId, timeProvider.GetUtcNow(), 1,
             booking.Id, booking.UserId, booking.BookingNumber));
     }
 }
 
-public sealed class PaymentFailedConsumer(BookingDbContext db, TimeProvider timeProvider) : IConsumer<PaymentFailedV1>
+public sealed class PaymentFailedConsumer(BookingDbContext db, InventorySummaryService inventorySummary, TimeProvider timeProvider) : IConsumer<PaymentFailedV1>
 {
     public async Task Consume(ConsumeContext<PaymentFailedV1> context)
     {
@@ -37,6 +38,7 @@ public sealed class PaymentFailedConsumer(BookingDbContext db, TimeProvider time
         var inventory = await db.Inventory.Where(x => x.HoldId == booking.HoldId && x.BookingId == booking.Id && x.Status == SeatInventoryStatus.Held)
             .ToListAsync(context.CancellationToken);
         foreach (var seat in inventory) seat.Release(booking.HoldId, booking.Id);
+        await inventorySummary.ApplyDeltaAsync(booking.EventId, inventory.Count, -inventory.Count, 0, context.CancellationToken);
         await db.SaveChangesAsync(context.CancellationToken);
         await context.Publish(new BookingCancelledV1(Guid.NewGuid(), message.CorrelationId, timeProvider.GetUtcNow(), 1,
             booking.Id, booking.UserId, message.Reason));

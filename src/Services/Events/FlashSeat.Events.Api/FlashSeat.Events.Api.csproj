@@ -4,6 +4,7 @@
     <ProjectReference Include="..\FlashSeat.Events.Application\FlashSeat.Events.Application.csproj" />
     <ProjectReference Include="..\FlashSeat.Events.Infrastructure\FlashSeat.Events.Infrastructure.csproj" />
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design"><PrivateAssets>all</PrivateAssets></PackageReference>
     <PackageReference Include="Swashbuckle.AspNetCore" />
   </ItemGroup>
 </Project>

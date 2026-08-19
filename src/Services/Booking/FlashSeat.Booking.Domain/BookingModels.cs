@@ -4,6 +4,47 @@ public enum SeatInventoryStatus { Available, Held, Booked }
 public enum SeatHoldStatus { Active, Converted, Expired, Released }
 public enum BookingStatus { PendingPayment, Confirmed, Cancelled, Expired }
 
+public sealed class EventInventorySummary
+{
+    private EventInventorySummary() { }
+
+    public EventInventorySummary(Guid eventId, int totalSeatCount, int availableSeatCount, int heldSeatCount, int bookedSeatCount, DateTimeOffset updatedAt)
+    {
+        EventId = eventId;
+        TotalSeatCount = totalSeatCount;
+        AvailableSeatCount = availableSeatCount;
+        HeldSeatCount = heldSeatCount;
+        BookedSeatCount = bookedSeatCount;
+        UpdatedAt = updatedAt;
+        InventoryVersion = 1;
+    }
+
+    public Guid EventId { get; private set; }
+    public int TotalSeatCount { get; private set; }
+    public int AvailableSeatCount { get; private set; }
+    public int HeldSeatCount { get; private set; }
+    public int BookedSeatCount { get; private set; }
+    public long InventoryVersion { get; private set; }
+    public DateTimeOffset UpdatedAt { get; private set; }
+    public void ReplaceCounts(int totalSeatCount, int availableSeatCount, int heldSeatCount, int bookedSeatCount, DateTimeOffset updatedAt)
+    {
+        TotalSeatCount = totalSeatCount;
+        AvailableSeatCount = availableSeatCount;
+        HeldSeatCount = heldSeatCount;
+        BookedSeatCount = bookedSeatCount;
+        UpdatedAt = updatedAt;
+        InventoryVersion++;
+    }
+    public void ApplyDelta(int availableDelta, int heldDelta, int bookedDelta, DateTimeOffset updatedAt)
+    {
+        AvailableSeatCount += availableDelta;
+        HeldSeatCount += heldDelta;
+        BookedSeatCount += bookedDelta;
+        UpdatedAt = updatedAt;
+        InventoryVersion++;
+    }
+}
+
 public sealed class EventSeatInventory
 {
     private EventSeatInventory() { }

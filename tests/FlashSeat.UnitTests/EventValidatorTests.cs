@@ -50,6 +50,6 @@ public sealed class EventValidatorTests
     {
         var now = DateTimeOffset.UtcNow;
         return new SaveEventRequest("Valid Event", "valid-event", "Description", "https://example.com/image.jpg",
-            "Venue", "Address", now.AddDays(2), now, now.AddDays(1), [new("VIP", "A", 1, 100_000)]);
+            "Venue", "Address", now.AddDays(2), now.AddDays(2).AddHours(3), now, now.AddDays(1), [new("VIP", "A", 1, 100_000)]);
     }
 }

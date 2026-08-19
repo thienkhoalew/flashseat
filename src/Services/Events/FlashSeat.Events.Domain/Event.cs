@@ -5,12 +5,12 @@ public sealed class EventEntity
     private EventEntity() { }
 
     public EventEntity(Guid id, string name, string slug, string description, string imageUrl, string venueName,
-        string address, DateTimeOffset startsAt, DateTimeOffset salesStartAt, DateTimeOffset salesEndAt,
-        DateTimeOffset now)
+        string address, DateTimeOffset startsAt, DateTimeOffset endsAt, DateTimeOffset salesStartAt,
+        DateTimeOffset salesEndAt, DateTimeOffset now)
     {
         Id = id;
         CreatedAt = now;
-        Update(name, slug, description, imageUrl, venueName, address, startsAt, salesStartAt, salesEndAt, now);
+        Update(name, slug, description, imageUrl, venueName, address, startsAt, endsAt, salesStartAt, salesEndAt, now);
     }
 
     public Guid Id { get; private set; }
@@ -21,6 +21,7 @@ public sealed class EventEntity
     public string VenueName { get; private set; } = string.Empty;
     public string Address { get; private set; } = string.Empty;
     public DateTimeOffset StartsAt { get; private set; }
+    public DateTimeOffset EndsAt { get; private set; }
     public DateTimeOffset SalesStartAt { get; private set; }
     public DateTimeOffset SalesEndAt { get; private set; }
     public EventStatus Status { get; private set; }
@@ -29,8 +30,8 @@ public sealed class EventEntity
     public ICollection<Seat> Seats { get; } = [];
 
     public void Update(string name, string slug, string description, string imageUrl, string venueName,
-        string address, DateTimeOffset startsAt, DateTimeOffset salesStartAt, DateTimeOffset salesEndAt,
-        DateTimeOffset now)
+        string address, DateTimeOffset startsAt, DateTimeOffset endsAt, DateTimeOffset salesStartAt,
+        DateTimeOffset salesEndAt, DateTimeOffset now)
     {
         if (Status != EventStatus.Draft) throw new InvalidOperationException("Only draft events can be updated.");
         Name = name.Trim();
@@ -40,6 +41,7 @@ public sealed class EventEntity
         VenueName = venueName.Trim();
         Address = address.Trim();
         StartsAt = startsAt;
+        EndsAt = endsAt;
         SalesStartAt = salesStartAt;
         SalesEndAt = salesEndAt;
         UpdatedAt = now;
@@ -48,7 +50,7 @@ public sealed class EventEntity
     public void Publish(DateTimeOffset now)
     {
         if (Status != EventStatus.Draft) throw new InvalidOperationException("Only draft events can be published.");
-        if (StartsAt <= now || SalesStartAt >= SalesEndAt || SalesEndAt > StartsAt || Seats.Count == 0)
+        if (StartsAt <= now || EndsAt <= StartsAt || SalesStartAt >= SalesEndAt || SalesEndAt > StartsAt || Seats.Count == 0)
             throw new InvalidOperationException("Event schedule or seats are invalid for publishing.");
         Status = EventStatus.Published;
         UpdatedAt = now;

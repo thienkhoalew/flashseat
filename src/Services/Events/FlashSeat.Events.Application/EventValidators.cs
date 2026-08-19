@@ -24,6 +24,7 @@ public sealed class SaveEventRequestValidator : AbstractValidator<SaveEventReque
         RuleFor(x => x.ImageUrl).NotEmpty().MaximumLength(2048).Must(BeHttpsUrl);
         RuleFor(x => x.VenueName).NotEmpty().MaximumLength(200);
         RuleFor(x => x.Address).NotEmpty().MaximumLength(500);
+        RuleFor(x => x.EndsAt).GreaterThan(x => x.StartsAt);
         RuleFor(x => x.SalesEndAt).GreaterThan(x => x.SalesStartAt);
         RuleFor(x => x.StartsAt).GreaterThanOrEqualTo(x => x.SalesEndAt);
         RuleFor(x => x.Seats).NotEmpty().Must(HaveUniqueSeatLabels).WithMessage("Seat labels must be unique.");

@@ -1,8 +1,8 @@
-export type EventItem = { id:string; name:string; slug:string; imageUrl:string; venueName:string; startsAt:string; minPrice:number; currency:string; status:string };
+export type EventItem = { id:string; name:string; slug:string; imageUrl:string; venueName:string; startsAt:string; endsAt:string; salesStartAt:string; salesEndAt:string; minPrice:number; currency:string; status:string; availabilityStatus?:'Available'|'SoldOut'|'Unknown'; totalSeatCount?:number; availableSeatCount?:number; heldSeatCount?:number; bookedSeatCount?:number; inventoryVersion?:number; availabilityAsOf?:string };
 export type Seat = { id:string; section:string; row:string; number:number; price:number; currency:string };
 export type SeatInput = Omit<Seat,'id'>;
-export type EventDetail = { id:string; name:string; slug:string; description:string; imageUrl:string; venueName:string; address:string; startsAt:string; salesStartAt:string; salesEndAt:string; status:string; seats:Seat[] };
-export type SaveEventInput = Pick<EventDetail,'name'|'slug'|'description'|'imageUrl'|'venueName'|'address'|'startsAt'|'salesStartAt'|'salesEndAt'> & { seats:SeatInput[] };
+export type EventDetail = { id:string; name:string; slug:string; description:string; imageUrl:string; venueName:string; address:string; startsAt:string; endsAt:string; salesStartAt:string; salesEndAt:string; status:string; seats:Seat[]; availabilityStatus?:'Available'|'SoldOut'|'Unknown'; totalSeatCount?:number; availableSeatCount?:number; heldSeatCount?:number; bookedSeatCount?:number; inventoryVersion?:number; availabilityAsOf?:string };
+export type SaveEventInput = Pick<EventDetail,'name'|'slug'|'description'|'imageUrl'|'venueName'|'address'|'startsAt'|'endsAt'|'salesStartAt'|'salesEndAt'> & { seats:SeatInput[] };
 export type PagedResponse<T> = { items:T[]; page:number; pageSize:number; totalCount:number };
 export type Availability = { seatId:string; status:string; holdExpiresAt?:string };
 export type HoldItem = { seatId:string; section:string; row:string; number:number; price:number };

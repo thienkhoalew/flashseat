@@ -2,6 +2,7 @@ using FlashSeat.Events.Application;
 using FlashSeat.Events.Infrastructure;
 using FlashSeat.Observability;
 using FluentValidation;
+using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.AddFlashSeatDefaults();
@@ -10,7 +11,11 @@ builder.Services.AddValidatorsFromAssemblyContaining<SaveEventRequestValidator>(
 builder.Services.AddFlashSeatSwagger();
 
 var app = builder.Build();
-if (app.Environment.IsDevelopment()) await app.Services.SeedEventsAsync();
+await using (var scope = app.Services.CreateAsyncScope())
+{
+    var db = scope.ServiceProvider.GetRequiredService<EventsDbContext>();
+    await db.Database.MigrateAsync();
+}
 app.UseFlashSeatDefaults();
 app.UseAuthentication();
 app.UseAuthorization();

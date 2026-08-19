@@ -19,6 +19,7 @@ public sealed class ExpiredHoldWorker(IServiceScopeFactory scopeFactory, TimePro
     {
         await using var scope = scopeFactory.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<BookingDbContext>();
+        var inventorySummary = scope.ServiceProvider.GetRequiredService<InventorySummaryService>();
         var now = timeProvider.GetUtcNow();
         var holds = await db.Holds.Where(x => x.ExpiresAt <= now &&
                 (x.Status == SeatHoldStatus.Active || x.Status == SeatHoldStatus.Converted))
@@ -38,12 +39,13 @@ public sealed class ExpiredHoldWorker(IServiceScopeFactory scopeFactory, TimePro
                 hold.Expire();
                 bookingId = booking.Id;
             }
-            await db.Inventory.Where(x => x.HoldId == hold.Id && x.BookingId == bookingId && x.Status == SeatInventoryStatus.Held)
+            var released = await db.Inventory.Where(x => x.HoldId == hold.Id && x.BookingId == bookingId && x.Status == SeatInventoryStatus.Held)
                 .ExecuteUpdateAsync(setters => setters
                     .SetProperty(x => x.Status, SeatInventoryStatus.Available)
                     .SetProperty(x => x.HoldId, (Guid?)null)
                     .SetProperty(x => x.HoldExpiresAt, (DateTimeOffset?)null)
                     .SetProperty(x => x.BookingId, (Guid?)null), cancellationToken);
+            await inventorySummary.ApplyDeltaAsync(hold.EventId, released, -released, 0, cancellationToken);
         }
         await db.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);

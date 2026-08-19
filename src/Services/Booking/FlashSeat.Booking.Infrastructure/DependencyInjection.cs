@@ -19,6 +19,7 @@ public static class DependencyInjection
         services.AddSingleton(TimeProvider.System);
         services.AddHttpClient<EventsClient>(client => client.BaseAddress = new Uri(configuration["Services:Events"] ?? "http://events-api:8080"));
         services.AddScoped<RedisSeatLock>();
+        services.AddScoped<InventorySummaryService>();
         services.AddScoped<IBookingService, BookingService>();
         services.AddHostedService<ExpiredHoldWorker>();
         services.AddMassTransit(x =>

@@ -14,15 +14,12 @@ builder.Services.AddValidatorsFromAssemblyContaining<CreateHoldRequestValidator>
 builder.Services.AddSignalR();
 builder.Services.AddFlashSeatSwagger();
 var app = builder.Build();
-if (app.Environment.IsDevelopment())
-{
-    await app.Services.InitializeBookingDatabaseAsync();
-    await app.Services.SyncDemoInventoryAsync();
-}
+await app.Services.InitializeBookingDatabaseAsync();
 app.UseFlashSeatDefaults(); app.UseAuthentication(); app.UseAuthorization();
 if (app.Environment.IsDevelopment()) app.UseSwagger();
 
 app.MapGet("/api/events/{eventId:guid}/availability", async (Guid eventId, IBookingService service, CancellationToken ct) => Results.Ok(await service.GetAvailabilityAsync(eventId, ct))).AllowAnonymous();
+app.MapPost("/internal/events/inventory-summary", async (InventorySummaryRequest request, IBookingService service, CancellationToken ct) => Results.Ok(await service.GetInventorySummariesAsync(request.EventIds, ct))).AllowAnonymous().ExcludeFromDescription();
 app.MapPost("/api/seat-holds", async (CreateHoldRequest request, ClaimsPrincipal user, IValidator<CreateHoldRequest> validator, IBookingService service, IHubContext<SeatAvailabilityHub> hub, CancellationToken ct) =>
 {
     var validation = await validator.ValidateAsync(request, ct); if (!validation.IsValid) return Results.ValidationProblem(validation.ToDictionary());

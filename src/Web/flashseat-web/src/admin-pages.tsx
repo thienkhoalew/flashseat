@@ -21,13 +21,16 @@ const eventSchema = z.object({
   venueName: z.string().min(1).max(200),
   address: z.string().min(1).max(500),
   startsAt: z.string().min(1),
+  endsAt: z.string().min(1),
   salesStartAt: z.string().min(1),
   salesEndAt: z.string().min(1),
   seats: z.array(seatSchema).min(1, 'Add at least one seat'),
 }).superRefine((value, context) => {
   const start = new Date(value.startsAt);
   const salesStart = new Date(value.salesStartAt);
+  const endsAt = new Date(value.endsAt);
   const salesEnd = new Date(value.salesEndAt);
+  if (endsAt <= start) context.addIssue({ code: 'custom', path: ['endsAt'], message: 'Event end must be after event start' });
   if (salesEnd <= salesStart) context.addIssue({ code: 'custom', path: ['salesEndAt'], message: 'Sales end must be after sales start' });
   if (start < salesEnd) context.addIssue({ code: 'custom', path: ['startsAt'], message: 'Event start must be after sales end' });
   const labels = new Set<string>();
@@ -47,10 +50,11 @@ const localDate = (value: string) => {
 const defaults = (event?: EventDetail): EventForm => event ? {
   ...event,
   startsAt: localDate(event.startsAt),
+  endsAt: localDate(event.endsAt),
   salesStartAt: localDate(event.salesStartAt),
   salesEndAt: localDate(event.salesEndAt),
   seats: event.seats.map(seat => ({ section: seat.section, row: seat.row, number: seat.number, price: seat.price, currency: seat.currency })),
-} : { name: '', slug: '', description: '', imageUrl: '', venueName: '', address: '', startsAt: '', salesStartAt: '', salesEndAt: '', seats: [emptySeat] };
+} : { name: '', slug: '', description: '', imageUrl: '', venueName: '', address: '', startsAt: '', endsAt: '', salesStartAt: '', salesEndAt: '', seats: [emptySeat] };
 
 export function AdminEventsPage() {
   const [search, setSearch] = useState('');
@@ -116,7 +120,7 @@ function EventFormPage({ event, onSaved }: { event?: EventDetail; onSaved: () =>
   const seats = useFieldArray({ control: form.control, name: 'seats' });
   const save = useMutation({
     mutationFn: (value: EventForm) => {
-      const input: SaveEventInput = { ...value, startsAt: new Date(value.startsAt).toISOString(), salesStartAt: new Date(value.salesStartAt).toISOString(), salesEndAt: new Date(value.salesEndAt).toISOString() };
+      const input: SaveEventInput = { ...value, startsAt: new Date(value.startsAt).toISOString(), endsAt: new Date(value.endsAt).toISOString(), salesStartAt: new Date(value.salesStartAt).toISOString(), salesEndAt: new Date(value.salesEndAt).toISOString() };
       return event ? api.updateEvent(event.id, input) : api.createEvent(input);
     },
     onSuccess: onSaved,
@@ -155,6 +159,7 @@ function EventFormPage({ event, onSaved }: { event?: EventDetail; onSaved: () =>
         </div></fieldset>
         <fieldset><legend>Schedule</legend><div className="form-grid">
           <Field label="Event start" error={form.formState.errors.startsAt?.message}><input type="datetime-local" {...form.register('startsAt')} /></Field>
+          <Field label="Event end" error={form.formState.errors.endsAt?.message}><input type="datetime-local" {...form.register('endsAt')} /></Field>
           <Field label="Sales start" error={form.formState.errors.salesStartAt?.message}><input type="datetime-local" {...form.register('salesStartAt')} /></Field>
           <Field label="Sales end" error={form.formState.errors.salesEndAt?.message}><input type="datetime-local" {...form.register('salesEndAt')} /></Field>
         </div></fieldset>

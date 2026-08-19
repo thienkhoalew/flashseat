@@ -16,11 +16,43 @@ const shortDate = (value: string) => {
   };
 };
 
+const salesAreOpen = (salesStartAt: string, salesEndAt: string, now = Date.now()) =>
+  Date.parse(salesStartAt) <= now && now < Date.parse(salesEndAt);
+
+const salesCountdown = (milliseconds: number) => {
+  const totalSeconds = Math.max(0, Math.ceil(milliseconds / 1000));
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  return [hours, minutes, seconds].map(value => String(value).padStart(2, '0')).join('.');
+};
+
 export function HomePage() {
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
+  const [now, setNow] = useState(Date.now());
   const query = useQuery({ queryKey: ['events', search, page], queryFn: () => api.events(search, page) });
   const pages = query.data ? Math.max(1, Math.ceil(query.data.totalCount / query.data.pageSize)) : 1;
+  const items = query.data?.items.filter(event => Date.parse(event.endsAt) > now) ?? [];
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    const boundaries = query.data?.items
+      .flatMap(event => [event.salesStartAt, event.salesEndAt, event.endsAt])
+      .map(Date.parse)
+      .filter(boundary => boundary > Date.now()) ?? [];
+    const boundary = Math.min(...boundaries);
+    if (!Number.isFinite(boundary)) return;
+    const timer = window.setTimeout(() => {
+      setNow(Date.now());
+      void query.refetch();
+    }, Math.min(boundary - Date.now(), 2_147_483_647));
+    return () => window.clearTimeout(timer);
+  }, [query.data?.items, query.refetch]);
 
   return <>
     <section className="hero">
@@ -42,18 +74,21 @@ export function HomePage() {
         ? <div className="event-board"><Skeleton /><Skeleton /><Skeleton /></div>
         : query.isError
           ? <ErrorState message="We couldn't load upcoming events." retry={() => query.refetch()} />
-          : query.data?.items.length === 0
+          : items.length === 0
             ? <p className="empty">No events match “{search}”. Try another event or venue.</p>
-            : <div className="event-board">{query.data?.items.map(event => {
+            : <div className="event-board">{items.map(event => {
               const starts = shortDate(event.startsAt);
-              return <article className="event-row" key={event.id}>
+              const bookingOpen = salesAreOpen(event.salesStartAt, event.salesEndAt, now);
+              const soldOut = event.availabilityStatus === 'SoldOut';
+              const salesOpeningIn = Date.parse(event.salesStartAt) - now;
+              return <Link className="event-row" aria-label={`View ${event.name}`} to={`/events/${event.id}`} key={event.id}>
                 <time className="date-block" dateTime={event.startsAt}><strong>{starts.day}</strong><span>{starts.month}</span></time>
-                <img src={event.imageUrl} alt="" loading="lazy" decoding="async" />
-                <div className="event-copy"><p className="mono">{date(event.startsAt)}</p><h3>{event.name}</h3><p>{event.venueName}</p></div>
-                <div className="event-action"><span>From</span><strong>{money(event.minPrice, event.currency)}</strong><Link aria-label={`View ${event.name}`} to={`/events/${event.id}`}>View event</Link></div>
-              </article>;
+                <div className="event-image"><img src={event.imageUrl} alt="" loading="lazy" decoding="async" /></div>
+                <div className="event-copy"><h3>{event.name}</h3><p>{event.venueName}</p></div>
+                <div className="event-action"><span>From</span><strong>{money(event.minPrice, event.currency)}</strong>{soldOut ? <span className="status soldout">Sold out</span> : bookingOpen ? <span className="status published">On sale</span> : salesOpeningIn > 0 ? <span className="sales-countdown" role="timer" aria-label={`Tickets open in ${salesCountdown(salesOpeningIn)}`}>Tickets open in {salesCountdown(salesOpeningIn)}</span> : <span className="status draft">Sales ended</span>}</div>
+              </Link>;
             })}</div>}
-      {!query.isError && query.data && query.data.items.length > 0 && <nav className="pagination" aria-label="Event pages">
+      {!query.isError && query.data && items.length > 0 && <nav className="pagination" aria-label="Event pages">
         <button className="ghost" disabled={page === 1} onClick={() => setPage(value => value - 1)}>Previous</button>
         <span className="mono" aria-live="polite">Page {page} / {pages}</span>
         <button className="ghost" disabled={page >= pages} onClick={() => setPage(value => value + 1)}>Next</button>
@@ -82,27 +117,31 @@ export function EventDetailPage() {
 
   const salesStart = Date.parse(event.salesStartAt);
   const salesEnd = Date.parse(event.salesEndAt);
-  const salesOpen = salesStart <= now && now < salesEnd;
+  const eventEnd = Date.parse(event.endsAt);
+  const salesOpen = salesStart <= now && now < salesEnd && now < eventEnd;
   const salesPending = now < salesStart;
+  const soldOut = event.availabilityStatus === 'SoldOut';
   const minSeat = event.seats.reduce<Seat | undefined>((lowest, seat) => !lowest || seat.price < lowest.price ? seat : lowest, undefined);
   return <section className="detail">
     <div className="detail-hero">
       <div className="detail-media"><img src={event.imageUrl} alt="" /></div>
       <div className="detail-copy">
-        <p className="kicker">{salesPending ? 'SALES OPENING' : salesOpen ? 'NOW BOOKING' : 'SALES ENDED'}</p>
-        <p className="mono">{date(event.startsAt)}</p>
+        <p className="kicker">{soldOut ? 'SOLD OUT' : salesPending ? 'SALES OPENING' : salesOpen ? 'NOW BOOKING' : 'SALES ENDED'}</p>
+        <p className="mono">{date(event.startsAt)} – {date(event.endsAt)}</p>
         <h1>{event.name}</h1>
         <dl className="event-facts">
+          <div><dt>Event time</dt><dd>{date(event.startsAt)} – {date(event.endsAt)}</dd></div>
+          <div><dt>Ticket sales</dt><dd>{date(event.salesStartAt)} – {date(event.salesEndAt)}</dd></div>
           <div><dt>Venue</dt><dd>{event.venueName}</dd></div>
           <div><dt>Address</dt><dd>{event.address}</dd></div>
           <div><dt>Tickets</dt><dd>{minSeat ? `From ${money(minSeat.price, minSeat.currency)}` : 'Unavailable'}</dd></div>
         </dl>
-        {salesOpen && <Link className="button" to={`/events/${event.id}/seats`}>Choose seats</Link>}
+        {salesOpen && !soldOut && <Link className="button" aria-label={`Choose seats for ${event.name}`} to={`/events/${event.id}/seats`}>Choose seats</Link>}
       </div>
     </div>
     <div className="detail-notes">
       <div><p className="kicker">ABOUT</p><h2>What to expect</h2><p>{event.description}</p></div>
-      <aside><p className="kicker">TICKET SALES</p><h2>{salesPending ? 'Sales open' : salesOpen ? 'Book before' : 'Sales ended'}</h2><p className="mono">{date(salesPending ? event.salesStartAt : event.salesEndAt)}</p><p>{salesOpen ? 'Seat availability updates live while you browse.' : salesPending ? 'Booking will become available at the time shown above.' : 'This event remains available for reference.'}</p></aside>
+      <aside><p className="kicker">TICKET SALES</p><h2>{soldOut ? 'Sold out' : salesPending ? 'Sales open' : salesOpen ? 'Book before' : 'Sales ended'}</h2><p className="mono">{date(soldOut ? event.endsAt : salesPending ? event.salesStartAt : event.salesEndAt)}</p><p>{soldOut ? 'All seats are currently unavailable.' : salesOpen ? 'Seat availability updates live while you browse.' : salesPending ? 'Booking will become available at the time shown above.' : 'This event remains available for reference.'}</p></aside>
     </div>
   </section>;
 }
@@ -178,6 +217,7 @@ export function SeatPage() {
   const nav = useNavigate();
   const qc = useQueryClient();
   const [selected, setSelected] = useState<string[]>([]);
+  const [reconciling, setReconciling] = useState(false);
   const event = useQuery({ queryKey: ['event', id], queryFn: () => api.event(id) });
   const availability = useQuery({ queryKey: ['availability', id], queryFn: () => api.availability(id), refetchInterval: 15000 });
 
@@ -198,10 +238,16 @@ export function SeatPage() {
       qc.invalidateQueries({ queryKey: ['availability', id] });
       nav(`/checkout/${result.id}`);
     },
-    onError: error => {
-      availability.refetch();
-      if (error instanceof ApiError && error.status === 409)
-        setSelected(items => items.filter(seatId => !error.problem.unavailableSeatIds.includes(seatId)));
+    onError: async error => {
+      if (!(error instanceof ApiError) || error.status !== 409) return;
+      setReconciling(true);
+      try {
+        const latest = await availability.refetch();
+        const available = new Set((latest.data ?? []).filter(item => item.status === 'Available').map(item => item.seatId));
+        setSelected(items => items.filter(seatId => available.has(seatId)));
+      } finally {
+        setReconciling(false);
+      }
     },
   });
 
@@ -210,7 +256,8 @@ export function SeatPage() {
   if (availability.isLoading) return <Skeleton label="Loading live seat availability" />;
   if (availability.isError) return <ErrorState message="Live seat availability is currently unavailable." retry={() => availability.refetch()} />;
 
-  const states = new Map(availability.data?.map(item => [item.seatId, item.status]));
+  const availabilityItems = availability.data ?? [];
+  const states = new Map(availabilityItems.map(item => [item.seatId, item.status]));
   const chosenSeats = event.data.seats.filter(seat => selected.includes(seat.id));
   const total = chosenSeats.reduce((sum, seat) => sum + seat.price, 0);
   const currency = chosenSeats[0]?.currency ?? event.data.seats[0]?.currency ?? 'VND';
@@ -219,9 +266,11 @@ export function SeatPage() {
   const unavailableSeats = holdError?.status === 409
     ? event.data.seats.filter(seat => holdError.problem.unavailableSeatIds.includes(seat.id)).map(seat => `${seat.section} ${seat.row}${seat.number}`)
     : [];
+  const availableSeatCount = availabilityItems.filter(item => item.status === 'Available').length;
+  const soldOut = availabilityItems.length > 0 && availableSeatCount === 0;
 
   return <section className="seat-page">
-    <div className="page-heading"><p className="kicker">LIVE SEATING</p><h1>{event.data.name}</h1><p>Select up to 6 seats. Availability refreshes automatically.</p></div>
+    <div className="page-heading"><p className="kicker">{soldOut ? 'SOLD OUT' : 'LIVE SEATING'}</p><h1>{event.data.name}</h1><p>{soldOut ? 'All seats are currently unavailable.' : 'Select up to 6 seats. Availability refreshes automatically.'}</p></div>
     <div className="seat-layout">
       <div className="seat-map">
         <div className="stage"><span>STAGE</span></div>
@@ -253,8 +302,9 @@ export function SeatPage() {
           ? <ul className="chosen-seats">{chosenSeats.map(seat => <li key={seat.id}><span>{seat.section} · {seat.row}{seat.number}</span><strong>{money(seat.price, seat.currency)}</strong></li>)}</ul>
           : <p>Choose seats from the map to start your order.</p>}
         <div className="total"><span>Total</span><strong>{money(total, currency)}</strong></div>
-        <button className="button" disabled={!selected.length || hold.isPending} onClick={() => hold.mutate([...selected])}>{hold.isPending ? 'Holding seats…' : 'Pay'}</button>
+        <button className="button" disabled={!selected.length || hold.isPending || reconciling || soldOut} onClick={() => hold.mutate([...selected])}>{reconciling ? 'Refreshing seats…' : hold.isPending ? 'Holding seats…' : 'Pay'}</button>
         <small>Maximum 6 seats per booking.</small>
+        {soldOut && <p className="error" role="status">Sold out — no seats are currently available.</p>}
         {hold.isError && <p className="error" role="alert">{hold.error instanceof ApiError && hold.error.status === 409
           ? unavailableSeats.length ? `${unavailableSeats.join(', ')} ${unavailableSeats.length === 1 ? 'is' : 'are'} no longer available. Choose another seat.` : hold.error.problem.title
           : hold.error.message}</p>}
