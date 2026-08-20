@@ -3,6 +3,7 @@ namespace FlashSeat.Booking.Domain;
 public enum SeatInventoryStatus { Available, Held, Booked }
 public enum SeatHoldStatus { Active, Converted, Expired, Released }
 public enum BookingStatus { PendingPayment, Confirmed, Cancelled, Expired }
+public enum TicketCheckInStatus { NotCheckedIn, CheckedIn }
 
 public sealed class EventInventorySummary
 {
@@ -95,6 +96,17 @@ public sealed class SeatHoldItem
     public SeatHold Hold { get; private set; } = null!;
 }
 
+public sealed record EventSnapshot(
+    string Name,
+    string Slug,
+    string Description,
+    string ImageUrl,
+    string VenueName,
+    string Address,
+    DateTimeOffset StartsAt,
+    DateTimeOffset EndsAt,
+    string Status);
+
 public sealed class Booking
 {
     private Booking() { }
@@ -111,6 +123,31 @@ public sealed class Booking
     public Guid? PaymentId { get; private set; }
     public DateTimeOffset CreatedAt { get; private set; }
     public DateTimeOffset? ConfirmedAt { get; private set; }
+    public string EventName { get; private set; } = string.Empty;
+    public string EventSlug { get; private set; } = string.Empty;
+    public string EventDescription { get; private set; } = string.Empty;
+    public string EventImageUrl { get; private set; } = string.Empty;
+    public string EventVenueName { get; private set; } = string.Empty;
+    public string EventAddress { get; private set; } = string.Empty;
+    public DateTimeOffset EventStartsAt { get; private set; }
+    public DateTimeOffset EventEndsAt { get; private set; }
+    public string EventStatus { get; private set; } = string.Empty;
+    public bool EventSnapshotAvailable { get; private set; }
+    public EventSnapshot Snapshot => new(EventName, EventSlug, EventDescription, EventImageUrl, EventVenueName,
+        EventAddress, EventStartsAt, EventEndsAt, EventStatus);
+    public void SetEventSnapshot(EventSnapshot snapshot)
+    {
+        EventName = snapshot.Name;
+        EventSlug = snapshot.Slug;
+        EventDescription = snapshot.Description;
+        EventImageUrl = snapshot.ImageUrl;
+        EventVenueName = snapshot.VenueName;
+        EventAddress = snapshot.Address;
+        EventStartsAt = snapshot.StartsAt;
+        EventEndsAt = snapshot.EndsAt;
+        EventStatus = snapshot.Status;
+        EventSnapshotAvailable = true;
+    }
     public ICollection<BookingItem> Items { get; } = [];
     public void Confirm(Guid paymentId, DateTimeOffset now) { if (Status != BookingStatus.PendingPayment) return; Status = BookingStatus.Confirmed; PaymentId = paymentId; ConfirmedAt = now; }
     public void Cancel() { if (Status == BookingStatus.PendingPayment) Status = BookingStatus.Cancelled; }
@@ -120,8 +157,8 @@ public sealed class Booking
 public sealed class BookingItem
 {
     private BookingItem() { }
-    public BookingItem(Guid id, Guid bookingId, Guid seatId, string section, string row, int number, decimal price)
-    { Id = id; BookingId = bookingId; SeatId = seatId; Section = section; Row = row; Number = number; Price = price; }
+    public BookingItem(Guid id, Guid bookingId, Guid seatId, string section, string row, int number, decimal price, string currency = "VND", string ticketCode = "")
+    { Id = id; BookingId = bookingId; SeatId = seatId; Section = section; Row = row; Number = number; Price = price; Currency = currency; TicketCode = ticketCode; }
     public Guid Id { get; private set; }
     public Guid BookingId { get; private set; }
     public Guid SeatId { get; private set; }
@@ -129,5 +166,18 @@ public sealed class BookingItem
     public string Row { get; private set; } = string.Empty;
     public int Number { get; private set; }
     public decimal Price { get; private set; }
+    public string Currency { get; private set; } = "VND";
+    public string TicketCode { get; private set; } = string.Empty;
+    public TicketCheckInStatus CheckInStatus { get; private set; }
+    public DateTimeOffset? CheckedInAt { get; private set; }
+    public Guid? CheckedInBy { get; private set; }
+    public void SetTicketCode(string ticketCode) => TicketCode = ticketCode;
+    public void CheckIn(Guid operatorId, DateTimeOffset now)
+    {
+        if (CheckInStatus != TicketCheckInStatus.NotCheckedIn) throw new InvalidOperationException();
+        CheckInStatus = TicketCheckInStatus.CheckedIn;
+        CheckedInAt = now;
+        CheckedInBy = operatorId;
+    }
     public Booking Booking { get; private set; } = null!;
 }

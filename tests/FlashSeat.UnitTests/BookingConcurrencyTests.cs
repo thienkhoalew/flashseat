@@ -186,7 +186,21 @@ public sealed class BookingConcurrencyTests
     private static EventsClient OpenSalesClient() => SalesClient(DateTimeOffset.MinValue, DateTimeOffset.MaxValue);
     private static EventsClient SalesClient(DateTimeOffset start, DateTimeOffset end) => Client(_ => new HttpResponseMessage(HttpStatusCode.OK)
     {
-        Content = new StringContent(JsonSerializer.Serialize(new { salesStartAt = start, salesEndAt = end }), Encoding.UTF8, "application/json")
+        Content = new StringContent(JsonSerializer.Serialize(new
+        {
+            name = "Sales test event",
+            slug = "sales-test-event",
+            description = "Sales test event",
+            imageUrl = "https://example.com/event.jpg",
+            venueName = "Test venue",
+            address = "Test address",
+            startsAt = start,
+            endsAt = end == DateTimeOffset.MaxValue ? end : end.AddHours(1),
+            salesStartAt = start,
+            salesEndAt = end,
+            status = "Published",
+            isArchived = false
+        }), Encoding.UTF8, "application/json")
     });
     private static EventsClient Client(Func<HttpRequestMessage, HttpResponseMessage> response) =>
         new(new HttpClient(new TestHandler(response)) { BaseAddress = new Uri("http://events.test") });

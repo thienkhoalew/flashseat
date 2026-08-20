@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, Navigate, NavLink, Outlet, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { api, isAuthenticated, logout } from './api';
 import { AdminEventFormPage, AdminEventsPage } from './admin-pages';
-import { AuthPage, CheckoutPage, EventDetailPage, HomePage, MyBookingsPage, SeatPage } from './pages';
+import { AuthPage, BookingDetailPage, CheckInPage, CheckoutPage, EventDetailPage, HomePage, MyBookingsPage, SeatPage } from './pages';
 
 function useCurrentUser() {
   return useQuery({ queryKey: ['current-user'], queryFn: api.me, enabled: isAuthenticated(), retry: false });
@@ -34,7 +34,7 @@ function Layout() {
       <nav aria-label="Main navigation">
         <NavLink className={navClass} to="/" end>Events</NavLink>
         {user.data && <NavLink className={navClass} to="/bookings">My tickets</NavLink>}
-        {user.data?.role === 'Admin' && <NavLink className={navClass} to="/admin/events">Admin</NavLink>}
+        {user.data?.role === 'Admin' && <><NavLink className={navClass} to="/admin/events">Admin</NavLink><NavLink className={navClass} to="/admin/check-in">Check in</NavLink></>}
         {authenticated
           ? <button className="ghost" onClick={() => { logout(); qc.removeQueries({ queryKey: ['current-user'] }); nav('/login'); }}>Sign out</button>
           : <NavLink className={({ isActive }) => `button small${isActive ? ' active' : ''}`} to="/login">Sign in</NavLink>}
@@ -65,11 +65,13 @@ export default function App() {
         <Route path="events/:id/seats" element={<SeatPage />} />
         <Route path="checkout/:holdId" element={<CheckoutPage />} />
         <Route path="bookings" element={<MyBookingsPage />} />
+        <Route path="bookings/:id" element={<BookingDetailPage />} />
       </Route>
       <Route element={<AuthenticatedRoute role="Admin" />}>
         <Route path="admin/events" element={<AdminEventsPage />} />
         <Route path="admin/events/new" element={<AdminEventFormPage />} />
         <Route path="admin/events/:id/edit" element={<AdminEventFormPage />} />
+        <Route path="admin/check-in" element={<CheckInPage />} />
       </Route>
       <Route path="*" element={<section className="center"><p className="kicker">404 / NOT FOUND</p><h1>This ticket leads nowhere.</h1><Link className="button" to="/">Browse events</Link></section>} />
     </Route>

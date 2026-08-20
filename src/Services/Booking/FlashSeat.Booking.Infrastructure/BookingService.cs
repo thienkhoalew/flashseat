@@ -122,19 +122,25 @@ public sealed class BookingService(BookingDbContext db, RedisSeatLock seatLock, 
 
     public async Task<BookingResponse?> CreateBookingAsync(Guid userId, CreateBookingRequest request, CancellationToken cancellationToken)
     {
-        var existing = await db.Bookings.AsNoTracking().Where(x => x.HoldId == request.HoldId && x.UserId == userId)
-            .Select(ToBookingExpression()).SingleOrDefaultAsync(cancellationToken);
-        if (existing is not null) return existing;
+        var existingEntity = await db.Bookings.AsNoTracking().Include(x => x.Items)
+            .SingleOrDefaultAsync(x => x.HoldId == request.HoldId && x.UserId == userId, cancellationToken);
+        if (existingEntity is not null) return ToBooking(existingEntity);
 
-        await using var lease = await seatLock.AcquireAsync(Guid.Empty, [request.HoldId]);
-        if (lease is null) return null;
-        existing = await db.Bookings.AsNoTracking().Where(x => x.HoldId == request.HoldId && x.UserId == userId)
-            .Select(ToBookingExpression()).SingleOrDefaultAsync(cancellationToken);
-        if (existing is not null) return existing;
+        var existingAfterLock = await db.Bookings.AsNoTracking().Include(x => x.Items)
+            .SingleOrDefaultAsync(x => x.HoldId == request.HoldId && x.UserId == userId, cancellationToken);
+        if (existingAfterLock is not null) return ToBooking(existingAfterLock);
+
+        var holdSnapshot = await db.Holds.AsNoTracking().SingleOrDefaultAsync(
+            x => x.Id == request.HoldId && x.UserId == userId, cancellationToken);
+        if (holdSnapshot is null) return null;
+        var eventMetadata = await eventsClient.GetMetadataAsync(holdSnapshot.EventId, cancellationToken);
+        if (eventMetadata is null || eventMetadata.IsArchived || eventMetadata.Status != "Published") return null;
 
         var now = timeProvider.GetUtcNow();
+        if (eventMetadata.EndsAt <= now) return null;
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
-        var hold = await db.Holds.Include(x => x.Items).SingleOrDefaultAsync(x => x.Id == request.HoldId && x.UserId == userId, cancellationToken);
+        var hold = await db.Holds.Include(x => x.Items).SingleOrDefaultAsync(
+            x => x.Id == request.HoldId && x.UserId == userId, cancellationToken);
         if (hold is null || hold.Status != SeatHoldStatus.Active || hold.ExpiresAt <= now)
         {
             await transaction.RollbackAsync(cancellationToken);
@@ -149,9 +155,13 @@ public sealed class BookingService(BookingDbContext db, RedisSeatLock seatLock, 
         }
         var entity = new global::FlashSeat.Booking.Domain.Booking(Guid.NewGuid(), $"FS-{now:yyyyMMdd}-{Guid.NewGuid().ToString("N")[..8].ToUpperInvariant()}",
             userId, hold.EventId, hold.Id, inventory.Sum(x => x.Price), inventory[0].Currency, now);
+        entity.SetEventSnapshot(new EventSnapshot(eventMetadata.Name, eventMetadata.Slug, eventMetadata.Description,
+            eventMetadata.ImageUrl, eventMetadata.VenueName, eventMetadata.Address, eventMetadata.StartsAt,
+            eventMetadata.EndsAt, eventMetadata.Status));
         foreach (var seat in inventory)
         {
-            entity.Items.Add(new BookingItem(Guid.NewGuid(), entity.Id, seat.SeatId, seat.Section, seat.Row, seat.Number, seat.Price));
+            entity.Items.Add(new BookingItem(Guid.NewGuid(), entity.Id, seat.SeatId, seat.Section, seat.Row, seat.Number,
+                seat.Price, seat.Currency, TicketCodeGenerator.Create()));
             seat.AssignBooking(hold.Id, entity.Id);
         }
         hold.Convert();
@@ -161,11 +171,19 @@ public sealed class BookingService(BookingDbContext db, RedisSeatLock seatLock, 
         return ToBooking(entity);
     }
 
-    public async Task<BookingResponse?> GetBookingAsync(Guid userId, bool isAdmin, Guid bookingId, CancellationToken cancellationToken) =>
-        await db.Bookings.AsNoTracking().Where(x => x.Id == bookingId && (isAdmin || x.UserId == userId)).Select(ToBookingExpression()).SingleOrDefaultAsync(cancellationToken);
+    public async Task<BookingResponse?> GetBookingAsync(Guid userId, bool isAdmin, Guid bookingId, CancellationToken cancellationToken)
+    {
+        var booking = await db.Bookings.AsNoTracking().Include(x => x.Items)
+            .SingleOrDefaultAsync(x => x.Id == bookingId && (isAdmin || x.UserId == userId), cancellationToken);
+        return booking is null ? null : ToBooking(booking);
+    }
 
-    public async Task<IReadOnlyCollection<BookingResponse>> GetBookingsAsync(Guid userId, CancellationToken cancellationToken) =>
-        await db.Bookings.AsNoTracking().Where(x => x.UserId == userId).OrderByDescending(x => x.CreatedAt).Select(ToBookingExpression()).ToListAsync(cancellationToken);
+    public async Task<IReadOnlyCollection<BookingResponse>> GetBookingsAsync(Guid userId, CancellationToken cancellationToken)
+    {
+        var bookings = await db.Bookings.AsNoTracking().Include(x => x.Items)
+            .Where(x => x.UserId == userId).OrderByDescending(x => x.CreatedAt).ToListAsync(cancellationToken);
+        return bookings.Select(ToBooking).ToList();
+    }
 
     public async Task ImportInventoryAsync(InventoryImportRequest request, CancellationToken cancellationToken)
     {
@@ -176,15 +194,73 @@ public sealed class BookingService(BookingDbContext db, RedisSeatLock seatLock, 
         await inventorySummary.RebuildAsync(request.EventId, cancellationToken);
     }
 
+    public async Task<EventActivityResponse> GetEventActivityAsync(Guid eventId, CancellationToken cancellationToken)
+    {
+        var activeHoldCount = await db.Holds.CountAsync(x => x.EventId == eventId && x.Status == SeatHoldStatus.Active && x.ExpiresAt > timeProvider.GetUtcNow(), cancellationToken);
+        var pendingBookingCount = await db.Bookings.CountAsync(x => x.EventId == eventId && x.Status == BookingStatus.PendingPayment, cancellationToken);
+        var hasHistoricalActivity = await db.Holds.AnyAsync(x => x.EventId == eventId, cancellationToken)
+            || await db.Bookings.AnyAsync(x => x.EventId == eventId, cancellationToken);
+        return new EventActivityResponse(eventId, hasHistoricalActivity, activeHoldCount, pendingBookingCount);
+    }
+
+    public async Task ReplaceInventoryAsync(InventoryReplacementRequest request, CancellationToken cancellationToken)
+    {
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+        if (await db.Holds.AnyAsync(x => x.EventId == request.EventId, cancellationToken)
+            || await db.Bookings.AnyAsync(x => x.EventId == request.EventId, cancellationToken))
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            throw new InvalidOperationException("Event inventory cannot be replaced after booking activity.");
+        }
+
+        await db.Inventory.Where(x => x.EventId == request.EventId).ExecuteDeleteAsync(cancellationToken);
+        foreach (var seat in request.Seats)
+            db.Inventory.Add(new EventSeatInventory(Guid.NewGuid(), request.EventId, seat.SeatId, seat.Section, seat.Row, seat.Number, seat.Price, seat.Currency));
+        await db.SaveChangesAsync(cancellationToken);
+        await inventorySummary.RebuildAsync(request.EventId, cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+    }
+
+    public async Task<CheckInAttemptResult> CheckInAsync(Guid operatorId, string ticketCode, CancellationToken cancellationToken)
+    {
+        if (!TicketCodeGenerator.TryParse(ticketCode.Trim(), out var normalized))
+            return new(null, CheckInFailure.UnknownTicket);
+
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+        var ticketId = await db.BookingItems.AsNoTracking()
+            .Where(x => x.TicketCode == normalized)
+            .Select(x => (Guid?)x.Id)
+            .SingleOrDefaultAsync(cancellationToken);
+        if (ticketId is null) return new(null, CheckInFailure.UnknownTicket);
+
+        await db.Database.ExecuteSqlInterpolatedAsync(
+            $"SELECT \"Id\" FROM booking_items WHERE \"Id\" = {ticketId.Value} FOR UPDATE",
+            cancellationToken);
+        var ticket = await db.BookingItems.Include(x => x.Booking)
+            .SingleAsync(x => x.Id == ticketId.Value, cancellationToken);
+        if (ticket.Booking.Status != BookingStatus.Confirmed)
+            return new(null, CheckInFailure.BookingNotConfirmed);
+        if (ticket.CheckInStatus == TicketCheckInStatus.CheckedIn)
+            return new(ToCheckIn(ticket), CheckInFailure.AlreadyCheckedIn);
+
+        ticket.CheckIn(operatorId, timeProvider.GetUtcNow());
+        await db.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        return new(ToCheckIn(ticket));
+    }
+
     private static HoldResponse ToHold(SeatHold hold, IReadOnlyCollection<EventSeatInventory> inventory, DateTimeOffset now) =>
         new(hold.Id, hold.EventId, hold.ExpiresAt <= now && hold.Status == SeatHoldStatus.Active ? SeatHoldStatus.Expired.ToString() : hold.Status.ToString(), hold.ExpiresAt,
             inventory.Select(x => new HoldItemResponse(x.SeatId, x.Section, x.Row, x.Number, x.Price)).ToList(),
             inventory.Sum(x => x.Price), inventory.FirstOrDefault()?.Currency ?? "VND");
-    private static BookingResponse ToBooking(global::FlashSeat.Booking.Domain.Booking x) => new(x.Id, x.BookingNumber, x.EventId, x.Status.ToString(), x.TotalAmount, x.Currency, x.CreatedAt,
-        x.Items.Select(i => new BookingItemResponse(i.SeatId, i.Section, i.Row, i.Number, i.Price)).ToList());
-    private static System.Linq.Expressions.Expression<Func<global::FlashSeat.Booking.Domain.Booking, BookingResponse>> ToBookingExpression() => x =>
-        new BookingResponse(x.Id, x.BookingNumber, x.EventId, x.Status.ToString(), x.TotalAmount, x.Currency, x.CreatedAt,
-            x.Items.Select(i => new BookingItemResponse(i.SeatId, i.Section, i.Row, i.Number, i.Price)).ToList());
+    private static BookingResponse ToBooking(global::FlashSeat.Booking.Domain.Booking x) => new(x.Id, x.BookingNumber, x.EventId, x.Status.ToString(), x.TotalAmount, x.Currency, x.CreatedAt, x.ConfirmedAt,
+        x.EventSnapshotAvailable ? ToEvent(x) : null,
+        x.Items.OrderBy(i => i.Section).ThenBy(i => i.Row).ThenBy(i => i.Number).Select(ToItem).ToList());
+    private static BookingEventResponse ToEvent(global::FlashSeat.Booking.Domain.Booking x) =>
+        new(x.EventId, x.EventName, x.EventSlug, x.EventDescription, x.EventImageUrl, x.EventVenueName, x.EventAddress, x.EventStartsAt, x.EventEndsAt, x.EventStatus);
+    private static BookingItemResponse ToItem(BookingItem i) => new(i.Id, i.SeatId, i.Section, i.Row, i.Number, i.Price, i.Currency, i.TicketCode, i.CheckInStatus.ToString(), i.CheckedInAt, i.CheckedInBy);
+    private static CheckInResponse ToCheckIn(BookingItem item) => new(item.TicketCode, item.CheckInStatus.ToString(), item.CheckedInAt,
+        item.Booking.BookingNumber, item.Booking.EventSnapshotAvailable ? ToEvent(item.Booking) : null, ToItem(item));
 }
 
 public sealed class EventsClient(HttpClient client)
@@ -196,6 +272,15 @@ public sealed class EventsClient(HttpClient client)
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadFromJsonAsync<EventSalesWindow>(cancellationToken)
             ?? throw new HttpRequestException("Events service returned an invalid sales window.");
+    }
+
+    public async Task<EventMetadataResponse?> GetMetadataAsync(Guid eventId, CancellationToken cancellationToken)
+    {
+        using var response = await client.GetAsync($"/internal/events/{eventId}/metadata", cancellationToken);
+        if (response.StatusCode == HttpStatusCode.NotFound) return null;
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<EventMetadataResponse>(cancellationToken)
+            ?? throw new HttpRequestException("Events service returned invalid event metadata.");
     }
 }
 

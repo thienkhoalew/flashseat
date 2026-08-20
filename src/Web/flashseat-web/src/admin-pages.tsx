@@ -61,15 +61,30 @@ export function AdminEventsPage() {
   const [page, setPage] = useState(1);
   const qc = useQueryClient();
   const query = useQuery({ queryKey: ['admin-events', search, page], queryFn: () => api.adminEvents(search, page) });
+  type ActionType = 'publish' | 'cancel' | 'unpublish' | 'restore' | 'republish' | 'archive';
   const action = useMutation({
-    mutationFn: ({ id, type }: { id: string; type: 'publish' | 'cancel' }) => type === 'publish' ? api.publishEvent(id) : api.cancelEvent(id),
+    mutationFn: ({ id, type }: { id: string; type: ActionType }) => {
+      switch (type) {
+        case 'publish': return api.publishEvent(id);
+        case 'cancel': return api.cancelEvent(id);
+        case 'unpublish': return api.unpublishEvent(id);
+        case 'restore': return api.restoreDraftEvent(id);
+        case 'republish': return api.republishEvent(id);
+        case 'archive': return api.archiveEvent(id);
+      }
+    },
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['admin-events'] }); qc.invalidateQueries({ queryKey: ['events'] }); },
   });
-  const run = (id: string, type: 'publish' | 'cancel', name: string) => {
-    const message = type === 'publish'
-      ? `Publish ${name}? Published events can no longer be edited.`
-      : `Cancel ${name}? It will disappear from public listings.`;
-    if (window.confirm(message)) action.mutate({ id, type });
+  const run = (id: string, type: ActionType, name: string, actionLabel?: string) => {
+    const messages: Record<ActionType, string> = {
+      publish: `Publish ${name}? Published events can no longer be edited.`,
+      cancel: `Cancel ${name}? It will disappear from public listings.`,
+      unpublish: `Return ${name} to draft? This is only allowed before ticket sales begin.`,
+      restore: `Restore ${name} to draft?`,
+      republish: `Republish ${name}? Existing inventory and bookings will be preserved.`,
+      archive: `${actionLabel ?? 'Archive'} ${name}? It will be removed while ticket history is preserved.`,
+    };
+    if (window.confirm(messages[type])) action.mutate({ id, type });
   };
   const pages = query.data ? Math.max(1, Math.ceil(query.data.totalCount / query.data.pageSize)) : 1;
 
@@ -93,13 +108,27 @@ export function AdminEventsPage() {
               <div><span className="admin-cell-label">Venue / date</span><p>{event.venueName}</p><p className="mono">{date(event.startsAt)}</p></div>
               <div><span className="admin-cell-label">From</span><strong className="mono">{money(event.minPrice, event.currency)}</strong></div>
               <div className="admin-actions">
-                {event.status === 'Draft' && <><Link className="ghost" to={`/admin/events/${event.id}/edit`}>Edit</Link><button className="button small" disabled={action.isPending} onClick={() => run(event.id, 'publish', event.name)}>Publish</button></>}
-                {event.status === 'Published' && <Link className="ghost" to={`/events/${event.id}`}>View public event</Link>}
-                {['Draft', 'Published'].includes(event.status) && <button className="danger" disabled={action.isPending} onClick={() => run(event.id, 'cancel', event.name)}>Cancel</button>}
+                {event.status === 'Draft' && <>
+                  <Link className="ghost" to={`/admin/events/${event.id}/edit`}>Edit</Link>
+                  <button className="button small" disabled={action.isPending} onClick={() => run(event.id, 'publish', event.name)}>Publish</button>
+                  <button className="danger" disabled={action.isPending} onClick={() => run(event.id, 'cancel', event.name)}>Cancel</button>
+                  <button className="danger" disabled={action.isPending} onClick={() => run(event.id, 'archive', event.name)}>Archive</button>
+                </>}
+                {event.status === 'Published' && <>
+                  <Link className="ghost" to={`/events/${event.id}`}>View public event</Link>
+                  <button className="ghost" disabled={action.isPending} onClick={() => run(event.id, 'unpublish', event.name)}>Return to draft</button>
+                  <button className="danger" disabled={action.isPending} onClick={() => run(event.id, 'cancel', event.name)}>Cancel</button>
+                </>}
+                {event.status === 'Cancelled' && <>
+                  <button className="button small" disabled={action.isPending} onClick={() => run(event.id, 'republish', event.name)}>Republish</button>
+                  <button className="ghost" disabled={action.isPending} onClick={() => run(event.id, 'restore', event.name)}>Restore draft</button>
+                  <button className="danger" disabled={action.isPending} onClick={() => run(event.id, 'archive', event.name, 'Delete')}>Delete</button>
+                </>}
+                {event.status === 'Ended' && <button className="danger" disabled={action.isPending} onClick={() => run(event.id, 'archive', event.name, 'Delete')}>Delete</button>}
               </div>
             </article>)}
           </div>}
-    {action.isError && <p className="error" role="alert">{action.error.message}</p>}
+    {action.isError && <p className="error" role="alert">{action.error instanceof Error && 'problem' in action.error && typeof action.error.problem === 'object' && action.error.problem !== null && 'code' in action.error.problem && typeof action.error.problem.code === 'string' ? `${action.error.problem.code}: ` : ''}{action.error.message}</p>}
     {!query.isError && query.data && query.data.items.length > 0 && <nav className="pagination" aria-label="Admin event pages"><button className="ghost" disabled={page === 1} onClick={() => setPage(value => value - 1)}>Previous</button><span className="mono" aria-live="polite">Page {page} / {pages}</span><button className="ghost" disabled={page >= pages} onClick={() => setPage(value => value + 1)}>Next</button></nav>}
   </section>;
 }

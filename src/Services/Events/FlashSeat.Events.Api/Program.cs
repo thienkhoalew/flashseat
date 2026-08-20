@@ -37,6 +37,9 @@ app.MapGet("/api/events/{eventId:guid}", async (Guid eventId, IEventService serv
 app.MapGet("/api/events/{eventId:guid}/seats", async (Guid eventId, IEventService service, CancellationToken cancellationToken) =>
     await service.GetEventAsync(eventId, false, cancellationToken) is { } result
         ? Results.Ok(result.Seats) : Results.NotFound()).AllowAnonymous();
+app.MapGet("/internal/events/{eventId:guid}/metadata", async (Guid eventId, IEventService service, CancellationToken cancellationToken) =>
+    await service.GetMetadataAsync(eventId, cancellationToken) is { } result
+        ? Results.Ok(result) : Results.NotFound()).ExcludeFromDescription();
 
 var admin = app.MapGroup("/api/admin/events").RequireAuthorization(policy => policy.RequireRole("Admin"));
 admin.MapGet("/", async (string? search, int page, int pageSize, IEventService service, CancellationToken cancellationToken) =>
@@ -60,14 +63,50 @@ admin.MapPut("/{eventId:guid}", async (Guid eventId, SaveEventRequest request,
 {
     var validation = await validator.ValidateAsync(request, cancellationToken);
     if (!validation.IsValid) return Results.ValidationProblem(validation.ToDictionary());
-    var result = await service.UpdateAsync(eventId, request, cancellationToken);
-    return result is null ? Results.NotFound() : Results.Ok(result);
+    try
+    {
+        var result = await service.UpdateAsync(eventId, request, cancellationToken);
+        return result is null ? Results.NotFound(new { code = "event_not_found", title = "Event not found." }) : Results.Ok(result);
+    }
+    catch (EventLifecycleException exception)
+    {
+        return Results.Json(new { code = exception.Code, title = exception.Message, status = exception.StatusCode }, statusCode: exception.StatusCode);
+    }
+    catch (InvalidOperationException exception)
+    {
+        return Results.Conflict(new { code = "invalid_transition", title = exception.Message, status = StatusCodes.Status409Conflict });
+    }
 });
 
 admin.MapPost("/{eventId:guid}/publish", async (Guid eventId, IEventService service, CancellationToken cancellationToken) =>
-    await service.PublishAsync(eventId, cancellationToken) ? Results.NoContent() : Results.NotFound());
+    await RunLifecycleAsync(() => service.PublishAsync(eventId, cancellationToken)));
 admin.MapPost("/{eventId:guid}/cancel", async (Guid eventId, IEventService service, CancellationToken cancellationToken) =>
-    await service.CancelAsync(eventId, cancellationToken) ? Results.NoContent() : Results.NotFound());
+    await RunLifecycleAsync(() => service.CancelAsync(eventId, cancellationToken)));
+admin.MapPost("/{eventId:guid}/unpublish", async (Guid eventId, IEventService service, CancellationToken cancellationToken) =>
+    await RunLifecycleAsync(() => service.UnpublishAsync(eventId, cancellationToken)));
+admin.MapPost("/{eventId:guid}/restore-draft", async (Guid eventId, IEventService service, CancellationToken cancellationToken) =>
+    await RunLifecycleAsync(() => service.RestoreDraftAsync(eventId, cancellationToken)));
+admin.MapPost("/{eventId:guid}/republish", async (Guid eventId, IEventService service, CancellationToken cancellationToken) =>
+    await RunLifecycleAsync(() => service.RepublishAsync(eventId, cancellationToken)));
+admin.MapDelete("/{eventId:guid}", async (Guid eventId, IEventService service, CancellationToken cancellationToken) =>
+    await RunLifecycleAsync(() => service.ArchiveAsync(eventId, cancellationToken)));
 
 app.Run();
+
+static async Task<IResult> RunLifecycleAsync(Func<Task<bool>> action)
+{
+    try
+    {
+        return await action() ? Results.NoContent() : Results.NotFound(new { code = "event_not_found", title = "Event not found." });
+    }
+    catch (EventLifecycleException exception)
+    {
+        return Results.Json(new { code = exception.Code, title = exception.Message, status = exception.StatusCode }, statusCode: exception.StatusCode);
+    }
+    catch (InvalidOperationException exception)
+    {
+        return Results.Conflict(new { code = "invalid_transition", title = exception.Message, status = StatusCodes.Status409Conflict });
+    }
+}
+
 public partial class Program;

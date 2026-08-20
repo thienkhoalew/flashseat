@@ -16,12 +16,14 @@ public sealed class EventsDbContext(DbContextOptions<EventsDbContext> options) :
             entity.HasKey(x => x.Id);
             entity.Property(x => x.Name).HasMaxLength(150);
             entity.Property(x => x.Slug).HasMaxLength(160);
-            entity.HasIndex(x => x.Slug).IsUnique();
             entity.Property(x => x.Description).HasMaxLength(5000);
             entity.Property(x => x.ImageUrl).HasMaxLength(2048);
             entity.Property(x => x.VenueName).HasMaxLength(200);
             entity.Property(x => x.Address).HasMaxLength(500);
             entity.Property(x => x.Status).HasConversion<string>().HasMaxLength(20);
+            entity.Property(x => x.DeletedAt);
+            entity.HasIndex(x => x.Slug).IsUnique().HasFilter("\"DeletedAt\" IS NULL");
+            entity.HasIndex(x => new { x.Status, x.EndsAt });
             entity.Property<uint>("xmin").IsRowVersion();
             entity.HasMany(x => x.Seats).WithOne(x => x.Event).HasForeignKey(x => x.EventId).OnDelete(DeleteBehavior.Cascade);
         });

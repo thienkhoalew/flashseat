@@ -7,12 +7,14 @@ export type PagedResponse<T> = { items:T[]; page:number; pageSize:number; totalC
 export type Availability = { seatId:string; status:string; holdExpiresAt?:string };
 export type HoldItem = { seatId:string; section:string; row:string; number:number; price:number };
 export type Hold = { id:string; eventId:string; status:string; expiresAt:string; items:HoldItem[]; totalAmount:number; currency:string };
-export type BookingItem = HoldItem;
-export type Booking = { id:string; bookingNumber:string; eventId:string; status:string; totalAmount:number; currency:string; createdAt:string; items:BookingItem[] };
+export type BookingEvent = { id:string; name:string; slug:string; description:string; imageUrl:string; venueName:string; address:string; startsAt:string; endsAt:string; status:string };
+export type BookingItem = HoldItem & { id?:string; currency?:string; ticketCode?:string; checkInStatus?:string; checkedInAt?:string; checkedInBy?:string|null };
+export type Booking = { id:string; bookingNumber:string; eventId:string; status:string; totalAmount:number; currency:string; createdAt:string; confirmedAt?:string; event?:BookingEvent|null; items:BookingItem[] };
+export type CheckInResponse = { ticketCode:string; status:string; checkedInAt?:string; bookingNumber:string; event?:BookingEvent|null; ticket:BookingItem };
 export type Payment = { id:string; bookingId:string; amount:number; currency:string; status:string; failureReason?:string; createdAt:string; completedAt?:string };
 export type AuthResponse = { accessToken:string; accessTokenExpiresAt:string; refreshToken:string; refreshTokenExpiresAt:string };
 export type CurrentUser = { id:string; email:string; fullName:string; role:'Admin'|'Customer' };
-export type ApiProblem = { title:string; unavailableSeatIds:string[] };
+export type ApiProblem = { title:string; code?:string; unavailableSeatIds:string[]; body?:unknown };
 export class ApiError extends Error {
   constructor(public status:number,public problem:ApiProblem){ super(problem.title); }
 }
@@ -31,7 +33,9 @@ async function request<T>(path:string, init:RequestInit={}, retry=true):Promise<
     const body:unknown=await response.json().catch(()=>null);
     const problem={
       title:typeof body==='object'&&body!==null&&'title' in body&&typeof body.title==='string'?body.title:'Something went wrong',
+      code:typeof body==='object'&&body!==null&&'code' in body&&typeof body.code==='string'?body.code:undefined,
       unavailableSeatIds:typeof body==='object'&&body!==null&&'unavailableSeatIds' in body&&Array.isArray(body.unavailableSeatIds)?body.unavailableSeatIds.filter((id):id is string=>typeof id==='string'):[],
+      body,
     };
     throw new ApiError(response.status,problem);
   }
@@ -51,12 +55,17 @@ export const api={
   createPayment:(bookingId:string,result:string,key:string)=>request<Payment>('/api/payments',{method:'POST',headers:{'Idempotency-Key':key},body:JSON.stringify({bookingId,simulateResult:result})}),
   payment:(id:string)=>request<Payment>(`/api/payments/${id}`),
   bookings:()=>request<Booking[]>('/api/bookings/me'),
+  checkIn:(ticketCode:string)=>request<CheckInResponse>('/api/admin/check-ins',{method:'POST',body:JSON.stringify({ticketCode})}),
   adminEvents:(search='',page=1,pageSize=12)=>request<PagedResponse<EventItem>>(`/api/admin/events/?search=${encodeURIComponent(search)}&page=${page}&pageSize=${pageSize}`),
   adminEvent:(id:string)=>request<EventDetail>(`/api/admin/events/${id}`),
   createEvent:(input:SaveEventInput)=>request<EventDetail>('/api/admin/events/',{method:'POST',body:JSON.stringify(input)}),
   updateEvent:(id:string,input:SaveEventInput)=>request<EventDetail>(`/api/admin/events/${id}`,{method:'PUT',body:JSON.stringify(input)}),
   publishEvent:(id:string)=>request<void>(`/api/admin/events/${id}/publish`,{method:'POST'}),
   cancelEvent:(id:string)=>request<void>(`/api/admin/events/${id}/cancel`,{method:'POST'}),
+  unpublishEvent:(id:string)=>request<void>(`/api/admin/events/${id}/unpublish`,{method:'POST'}),
+  restoreDraftEvent:(id:string)=>request<void>(`/api/admin/events/${id}/restore-draft`,{method:'POST'}),
+  republishEvent:(id:string)=>request<void>(`/api/admin/events/${id}/republish`,{method:'POST'}),
+  archiveEvent:(id:string)=>request<void>(`/api/admin/events/${id}`,{method:'DELETE'}),
 };
 export const money=(value:number,currency:string)=>new Intl.NumberFormat('en-US',{style:'currency',currency}).format(value);
 export const date=(value:string)=>new Intl.DateTimeFormat('en-US',{dateStyle:'medium',timeStyle:'short'}).format(new Date(value));

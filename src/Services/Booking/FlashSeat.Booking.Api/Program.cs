@@ -56,6 +56,24 @@ app.MapPost("/api/bookings", async (CreateBookingRequest request, ClaimsPrincipa
 }).RequireAuthorization();
 app.MapGet("/api/bookings/me", async (ClaimsPrincipal user, IBookingService service, CancellationToken ct) => Results.Ok(await service.GetBookingsAsync(UserId(user), ct))).RequireAuthorization();
 app.MapGet("/api/bookings/{bookingId:guid}", async (Guid bookingId, ClaimsPrincipal user, IBookingService service, CancellationToken ct) => await service.GetBookingAsync(UserId(user), user.IsInRole("Admin"), bookingId, ct) is { } result ? Results.Ok(result) : Results.NotFound()).RequireAuthorization();
+app.MapPost("/api/admin/check-ins", async (CheckInRequest request, ClaimsPrincipal user, IBookingService service, CancellationToken ct) =>
+{
+    var result = await service.CheckInAsync(UserId(user), request.TicketCode, ct);
+    return result.Failure switch
+    {
+        CheckInFailure.UnknownTicket => Results.NotFound(new { title = "Ticket not found." }),
+        CheckInFailure.BookingNotConfirmed => Results.Conflict(new { title = "Booking is not confirmed." }),
+        CheckInFailure.AlreadyCheckedIn => Results.Conflict(result.Response),
+        _ => Results.Ok(result.Response)
+    };
+}).RequireAuthorization(policy => policy.RequireRole("Admin"));
+app.MapGet("/internal/events/{eventId:guid}/activity", async (Guid eventId, IBookingService service, CancellationToken ct) =>
+    Results.Ok(await service.GetEventActivityAsync(eventId, ct))).AllowAnonymous().ExcludeFromDescription();
+app.MapPut("/internal/events/inventory", async (InventoryReplacementRequest request, IBookingService service, CancellationToken ct) =>
+{
+    await service.ReplaceInventoryAsync(request, ct);
+    return Results.NoContent();
+}).AllowAnonymous().ExcludeFromDescription();
 app.MapPost("/internal/events/inventory", async (InventoryImportRequest request, IBookingService service, CancellationToken ct) => { await service.ImportInventoryAsync(request, ct); return Results.NoContent(); }).ExcludeFromDescription();
 app.MapGet("/internal/bookings/{bookingId:guid}", async (Guid bookingId, ClaimsPrincipal user, BookingDbContext db, CancellationToken ct) =>
 {

@@ -5,7 +5,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace FlashSeat.Booking.Infrastructure;
 
-public sealed class PaymentSucceededConsumer(BookingDbContext db, InventorySummaryService inventorySummary, TimeProvider timeProvider) : IConsumer<PaymentSucceededV1>
+public sealed class PaymentSucceededConsumer(BookingDbContext db, InventorySummaryService inventorySummary, TimeProvider timeProvider, EventsClient eventsClient) : IConsumer<PaymentSucceededV1>
 {
     public async Task Consume(ConsumeContext<PaymentSucceededV1> context)
     {
@@ -13,6 +13,8 @@ public sealed class PaymentSucceededConsumer(BookingDbContext db, InventorySumma
         var booking = await db.Bookings.Include(x => x.Items).SingleOrDefaultAsync(x => x.Id == message.BookingId, context.CancellationToken);
         if (booking is null || booking.Status != BookingStatus.PendingPayment || booking.UserId != message.UserId ||
             booking.TotalAmount != message.Amount || booking.Currency != message.Currency) return;
+        var metadata = await eventsClient.GetMetadataAsync(booking.EventId, context.CancellationToken);
+        if (metadata is null || metadata.IsArchived || metadata.Status != "Published" || metadata.EndsAt <= timeProvider.GetUtcNow()) return;
         var hold = await db.Holds.SingleAsync(x => x.Id == booking.HoldId, context.CancellationToken);
         if (hold.ExpiresAt < message.OccurredAt) return;
         var inventory = await db.Inventory.Where(x => x.HoldId == hold.Id && x.BookingId == booking.Id && x.Status == SeatInventoryStatus.Held)

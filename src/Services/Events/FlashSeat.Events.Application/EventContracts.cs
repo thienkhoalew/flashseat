@@ -32,3 +32,12 @@ public sealed record EventDetailResponse(
     int? BookedSeatCount = null, long? InventoryVersion = null, DateTimeOffset? AvailabilityAsOf = null);
 
 public sealed record PagedResponse<T>(IReadOnlyCollection<T> Items, int Page, int PageSize, int TotalCount);
+
+public sealed record EventMetadataResponse(Guid Id, string Name, string Slug, string Description, string ImageUrl,
+    string VenueName, string Address, DateTimeOffset StartsAt, DateTimeOffset EndsAt, string Status, bool IsArchived = false);
+
+public sealed class EventLifecycleException(string code, string message, int statusCode = 409) : InvalidOperationException(message)
+{
+    public string Code { get; } = code;
+    public int StatusCode { get; } = statusCode;
+}

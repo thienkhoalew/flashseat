@@ -172,6 +172,8 @@ input[aria-invalid="true"], textarea[aria-invalid="true"] { border-color: var(--
 .ticket::before { top: -2px; border-top: 0; border-radius: 0 0 12px 12px; }
 .ticket::after { bottom: -2px; border-bottom: 0; border-radius: 12px 12px 0 0; }
 .ticket-main { padding: 24px 30px; }
+.ticket-main h2 { margin: 12px 0 4px; font-size: 1.45rem; }
+.ticket-event-image { width: 100%; max-height: 180px; margin: -24px -30px 20px; width: calc(100% + 60px); object-fit: cover; }
 .ticket-number { margin: 14px 0 6px; font-size: 1.45rem; font-weight: 800; }
 .ticket-main > p:not(.ticket-number) { color: var(--muted); }
 .ticket-seats { display: flex; flex-wrap: wrap; gap: 6px; }
@@ -179,6 +181,19 @@ input[aria-invalid="true"], textarea[aria-invalid="true"] { border-color: var(--
 .ticket-stub { padding: 24px; display: flex; flex-direction: column; justify-content: center; gap: 8px; border-left: 2px dashed var(--line); text-align: right; }
 .ticket-stub strong { font: 800 1.25rem ui-monospace, monospace; }
 .ticket-stub small { margin-top: 18px; color: var(--signal-dark); font: 800 .72rem ui-monospace, monospace; letter-spacing: .15em; }
+.ticket-detail-actions { margin-top: 24px; display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.individual-ticket .ticket-main { min-height: 260px; }
+.ticket-qr { align-items: center; text-align: center; }
+.ticket-qr svg { max-width: 100%; height: auto; }
+.success { color: var(--success) !important; font-weight: 750; }
+.checkin-layout { max-width: 900px; margin-top: 34px; display: grid; grid-template-columns: minmax(0, 1fr) minmax(280px, .8fr); gap: 28px; }
+.scanner-panel, .checkin-form-panel { padding: 24px; display: grid; gap: 18px; align-content: start; border: 2px solid var(--line); background: var(--paper-light); box-shadow: 5px 5px 0 var(--ink); }
+.scanner-video, .scanner-placeholder { width: 100%; aspect-ratio: 4 / 3; display: grid; place-items: center; background: #17150f; color: white; object-fit: cover; }
+.scanner-status { margin: 0; color: var(--muted); font-size: .88rem; }
+.checkin-form-panel form { display: grid; gap: 16px; }
+.checkin-form-panel label { display: grid; gap: 8px; font-weight: 750; }
+.checkin-result { padding: 16px; border: 2px solid var(--success); color: var(--success); }
+.checkin-result p { margin: 6px 0 0; }
 
 .status.soldout { color: var(--ink); background: var(--paper-light); }
 
@@ -186,6 +201,7 @@ input[aria-invalid="true"], textarea[aria-invalid="true"] { border-color: var(--
 .status.published, .status.confirmed { color: var(--success); }
 .status.draft, .status.pendingpayment { color: var(--warning); }
 .status.cancelled, .status.expired { color: var(--danger); }
+.status.ended { color: var(--muted); }
 
 .center, .empty { padding: 100px 20px; text-align: center; }
 .empty p { color: var(--muted); }
@@ -237,7 +253,7 @@ input[aria-invalid="true"], textarea[aria-invalid="true"] { border-color: var(--
   .detail-copy, .auth-panel { border-left: 0; border-top: 2px solid var(--line); }
   .detail-notes { grid-template-columns: 1fr; gap: 34px; }
   .detail-notes aside { padding: 24px 0 0; border: 0; border-top: 2px solid var(--line); }
-  .seat-layout, .checkout-layout { grid-template-columns: 1fr; }
+  .seat-layout, .checkout-layout, .checkin-layout { grid-template-columns: 1fr; }
   .seat-map { overflow-x: auto; }
   .summary { position: static; }
   .admin-list-head { display: none; }
@@ -275,6 +291,8 @@ input[aria-invalid="true"], textarea[aria-invalid="true"] { border-color: var(--
   .ticket { grid-template-columns: 1fr; }
   .ticket::before, .ticket::after { display: none; }
   .ticket-stub { border-left: 0; border-top: 2px dashed var(--line); text-align: left; }
+  .ticket-event-image { margin-inline: -22px; width: calc(100% + 44px); }
+  .ticket-detail-actions { align-items: flex-start; flex-direction: column; }
   .admin-page { padding-top: 44px; }
   .admin-toolbar { align-items: flex-start; flex-direction: column; }
   .admin-row { grid-template-columns: 1fr; }

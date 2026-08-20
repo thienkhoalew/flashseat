@@ -3,10 +3,10 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { BrowserRouter, MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { AdminEventFormPage } from './admin-pages';
+import { AdminEventFormPage, AdminEventsPage } from './admin-pages';
 import { ApiError, api, logout, saveAuth } from './api';
 import App from './App';
-import { AuthPage, CheckoutPage, EventDetailPage, HomePage, MyBookingsPage, SeatPage } from './pages';
+import { AuthPage, BookingDetailPage, CheckInPage, CheckoutPage, EventDetailPage, HomePage, MyBookingsPage, SeatPage } from './pages';
 
 vi.mock('@microsoft/signalr',()=>({HubConnectionBuilder:class{
   withUrl(){return this;} withAutomaticReconnect(){return this;}
@@ -189,6 +189,50 @@ describe('AdminEventFormPage',()=>{
   });
 });
 
+describe('AdminEventsPage',()=>{
+  const adminEvent=(status:string)=>({id:`event-${status.toLowerCase()}`,name:`${status} event`,slug:`${status.toLowerCase()}-event`,imageUrl:'https://example.com/event.jpg',venueName:'Venue',startsAt:'2026-09-01T12:00:00Z',endsAt:'2026-09-01T14:00:00Z',salesStartAt:'2026-08-01T12:00:00Z',salesEndAt:'2026-09-01T11:00:00Z',minPrice:100,currency:'USD',status});
+  const renderAdmin=(status:string)=>{
+    vi.spyOn(api,'adminEvents').mockResolvedValue({items:[adminEvent(status)],page:1,pageSize:12,totalCount:1});
+    renderWithQuery(<AdminEventsPage/>);
+  };
+
+  it.each([
+    ['Draft',['Edit','Publish','Cancel','Archive'],['View public event','Return to draft','Republish','Restore draft','No lifecycle actions']],
+    ['Published',['View public event','Return to draft','Cancel'],['Edit','Publish','Republish','Restore draft','Archive','No lifecycle actions']],
+    ['Cancelled',['Republish','Restore draft','Delete'],['Edit','Publish','View public event','Return to draft','Cancel','Archive','No lifecycle actions']],
+    ['Ended',['Delete'],['Edit','Publish','Cancel','View public event','Return to draft','Republish','Restore draft','Archive','No lifecycle actions']],
+  ] as const)('shows the valid action matrix for %s',async(status,visible,hidden)=>{
+    renderAdmin(status);
+    expect(await screen.findByText(`${status} event`)).toBeInTheDocument();
+    visible.forEach(label=>expect(screen.getByText(label)).toBeInTheDocument());
+    hidden.forEach(label=>expect(screen.queryByText(label)).not.toBeInTheDocument());
+  });
+
+  it.each([
+    ['Published','Return to draft','unpublishEvent'],
+    ['Cancelled','Republish','republishEvent'],
+    ['Cancelled','Restore draft','restoreDraftEvent'],
+    ['Cancelled','Delete','archiveEvent'],
+    ['Ended','Delete','archiveEvent'],
+    ['Draft','Archive','archiveEvent'],
+  ] as const)('calls %s lifecycle action after confirmation',async(status,label,method)=>{
+    const mutation=vi.spyOn(api,method).mockResolvedValue(undefined);
+    vi.spyOn(window,'confirm').mockReturnValue(true);
+    renderAdmin(status);
+    fireEvent.click(await screen.findByText(label));
+    expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining(status === 'Published' ? 'Return' : label.split(' ')[0]));
+    await waitFor(()=>expect(mutation).toHaveBeenCalledWith(`event-${status.toLowerCase()}`));
+  });
+
+  it('shows the structured lifecycle error code',async()=>{
+    vi.spyOn(window,'confirm').mockReturnValue(true);
+    vi.spyOn(api,'archiveEvent').mockRejectedValue(new ApiError(409,{title:'This event has booking activity and cannot be changed.',code:'sales_activity_exists',unavailableSeatIds:[]}));
+    renderAdmin('Draft');
+    fireEvent.click(await screen.findByText('Archive'));
+    expect(await screen.findByRole('alert')).toHaveTextContent('sales_activity_exists: This event has booking activity and cannot be changed.');
+  });
+});
+
 describe('SeatPage',()=>{
   it('removes only overlapping seats and keeps the remaining bill',async()=>{
     const detail={id:'event-1',name:'Concert',slug:'concert',description:'',imageUrl:'',venueName:'Venue',address:'Address',startsAt:'2026-08-01T12:00:00Z',endsAt:'2026-08-01T14:00:00Z',salesStartAt:'2026-07-01T12:00:00Z',salesEndAt:'2026-08-01T11:00:00Z',status:'Published',seats:[
@@ -268,5 +312,34 @@ describe('MyBookingsPage',()=>{
     renderWithQuery(<MyBookingsPage/>);
     expect(await screen.findByText('Main A1')).toBeInTheDocument();
     expect(screen.getByText('Main A2')).toBeInTheDocument();
+  });
+
+  it('shows event information and a view tickets link',async()=>{
+    vi.spyOn(api,'bookings').mockResolvedValue([{id:'booking-2',bookingNumber:'FS-002',eventId:'event-2',status:'Confirmed',totalAmount:100,currency:'USD',createdAt:'2026-07-17T12:00:00Z',event:{id:'event-2',name:'Night Market',slug:'night-market',description:'',imageUrl:'',venueName:'Main Hall',address:'1 Main Street',startsAt:'2026-08-20T12:00:00Z',endsAt:'2026-08-20T14:00:00Z',status:'Published'},items:[{id:'item-1',seatId:'seat-1',section:'Main',row:'A',number:1,price:100,currency:'USD',ticketCode:'0123456789ABCDEF0123456789ABCDEF',checkInStatus:'NotCheckedIn'}]}]);
+    renderWithQuery(<MyBookingsPage/>);
+    expect(await screen.findByText('Night Market')).toBeInTheDocument();
+    expect(screen.getByText((content) => content.startsWith('Main Hall ·'))).toBeInTheDocument();
+    expect(screen.getByRole('link',{name:'View tickets'})).toHaveAttribute('href','/bookings/booking-2');
+  });
+});
+
+describe('BookingDetailPage',()=>{
+  it('renders one QR for each confirmed ticket',async()=>{
+    vi.spyOn(api,'booking').mockResolvedValue({id:'booking-3',bookingNumber:'FS-003',eventId:'event-3',status:'Confirmed',totalAmount:200,currency:'USD',createdAt:'2026-07-17T12:00:00Z',event:{id:'event-3',name:'Arena Show',slug:'arena-show',description:'',imageUrl:'',venueName:'Arena',address:'Address',startsAt:'2026-08-20T12:00:00Z',endsAt:'2026-08-20T14:00:00Z',status:'Published'},items:[{id:'item-1',seatId:'seat-1',section:'Main',row:'A',number:1,price:100,currency:'USD',ticketCode:'0123456789ABCDEF0123456789ABCDEF',checkInStatus:'NotCheckedIn'},{id:'item-2',seatId:'seat-2',section:'Main',row:'A',number:2,price:100,currency:'USD',ticketCode:'FEDCBA9876543210FEDCBA9876543210',checkInStatus:'NotCheckedIn'}]});
+    renderWithQuery(<MemoryRouter initialEntries={['/bookings/booking-3']}><Routes><Route path="/bookings/:id" element={<BookingDetailPage/>}/></Routes></MemoryRouter>,false);
+    expect(await screen.findByRole('heading',{name:'Arena Show',level:1})).toBeInTheDocument();
+    expect(screen.getAllByRole('img')).toHaveLength(2);
+    expect(screen.getAllByText(/0123456789|FEDCBA9876/)).toHaveLength(2);
+  });
+});
+
+describe('CheckInPage',()=>{
+  it('submits a manually entered ticket code',async()=>{
+    vi.spyOn(api,'checkIn').mockResolvedValue({ticketCode:'0123456789ABCDEF0123456789ABCDEF',status:'CheckedIn',checkedInAt:'2026-08-20T13:00:00Z',bookingNumber:'FS-004',event:null,ticket:{id:'item-1',seatId:'seat-1',section:'Main',row:'A',number:1,price:100,currency:'USD',ticketCode:'0123456789ABCDEF0123456789ABCDEF',checkInStatus:'CheckedIn'}});
+    renderWithQuery(<CheckInPage/>);
+    fireEvent.change(screen.getByLabelText('Ticket code'),{target:{value:'FS1:0123456789ABCDEF0123456789ABCDEF'}});
+    fireEvent.click(screen.getByRole('button',{name:'Check in ticket'}));
+    expect(await screen.findByText('Ticket checked in.')).toBeInTheDocument();
+    expect(api.checkIn).toHaveBeenCalledWith('FS1:0123456789ABCDEF0123456789ABCDEF');
   });
 });

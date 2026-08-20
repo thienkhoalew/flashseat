@@ -1,11 +1,13 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import * as signalR from '@microsoft/signalr';
-import { ApiError, api, date, money, saveAuth, type Seat } from './api';
+import { BrowserQRCodeReader, type IScannerControls } from '@zxing/browser';
+import { ApiError, api, date, money, saveAuth, type Booking, type BookingItem, type CheckInResponse, type Seat } from './api';
+import { QRCodeSVG } from 'qrcode.react';
 import demoPaymentQr from './assets/demo-payment-qr.svg';
 
 const shortDate = (value: string) => {
@@ -400,7 +402,7 @@ const bookingStatus = (status: string) => status.replace(/([a-z])([A-Z])/g, '$1 
 export function MyBookingsPage() {
   const query = useQuery({ queryKey: ['bookings'], queryFn: api.bookings });
   return <section className="tickets-page">
-    <div className="page-heading"><p className="kicker">YOUR BOX OFFICE</p><h1>My tickets</h1><p>Booking references and seats, ready when you need them.</p></div>
+    <div className="page-heading"><p className="kicker">YOUR BOX OFFICE</p><h1>My tickets</h1><p>Event details, booking references, and every seat in one place.</p></div>
     {query.isLoading
       ? <Skeleton />
       : query.isError
@@ -408,9 +410,108 @@ export function MyBookingsPage() {
         : query.data?.length === 0
           ? <div className="empty"><p>You don't have any tickets yet.</p><Link className="button" to="/">Browse events</Link></div>
           : <div className="tickets">{query.data?.map(booking => <article className="ticket" key={booking.id}>
-            <div className="ticket-main"><span className={`status ${booking.status.toLowerCase()}`}>{bookingStatus(booking.status)}</span><p className="ticket-number">{booking.bookingNumber}</p><p>{date(booking.createdAt)}</p><div className="ticket-seats">{booking.items.map(seat => <span key={seat.seatId}>{seat.section} {seat.row}{seat.number}</span>)}</div></div>
+            <div className="ticket-main">
+              {booking.event?.imageUrl && <img className="ticket-event-image" src={booking.event.imageUrl} alt="" />}
+              <span className={`status ${booking.status.toLowerCase()}`}>{bookingStatus(booking.status)}</span>
+              <h2>{booking.event?.name ?? 'Event details unavailable'}</h2>
+              <p className="ticket-number">{booking.bookingNumber}</p>
+              {booking.event && <p>{booking.event.venueName} · {date(booking.event.startsAt)}</p>}
+              <div className="ticket-seats">{booking.items.map(seat => <span key={seat.id ?? seat.seatId}>{seat.section} {seat.row}{seat.number}</span>)}</div>
+              <Link className="button small" to={`/bookings/${booking.id}`}>View tickets</Link>
+            </div>
             <div className="ticket-stub"><span>{booking.items.length} seat{booking.items.length === 1 ? '' : 's'}</span><strong>{money(booking.totalAmount, booking.currency)}</strong><small>FLASHSEAT</small></div>
           </article>)}</div>}
+  </section>;
+}
+
+function TicketCard({ booking, ticket }: { booking: Booking; ticket: BookingItem }) {
+  const confirmed = booking.status === 'Confirmed' && !!ticket.ticketCode;
+  return <article className="ticket individual-ticket">
+    <div className="ticket-main">
+      <span className={`status ${ticket.checkInStatus?.toLowerCase() === 'checkedin' ? 'confirmed' : booking.status.toLowerCase()}`}>{ticket.checkInStatus === 'CheckedIn' ? 'Checked in' : bookingStatus(booking.status)}</span>
+      <h2>{booking.event?.name ?? 'Event details unavailable'}</h2>
+      <p className="ticket-number">{ticket.ticketCode || 'Ticket code pending'}</p>
+      <p>{ticket.section} · {ticket.row}{ticket.number}</p>
+      {booking.event && <p>{booking.event.venueName} · {date(booking.event.startsAt)}</p>}
+      <p>{money(ticket.price, ticket.currency ?? booking.currency)}</p>
+      {ticket.checkInStatus === 'CheckedIn' && ticket.checkedInAt && <p className="success">Checked in {date(ticket.checkedInAt)}</p>}
+    </div>
+    <div className="ticket-stub ticket-qr">{confirmed ? <QRCodeSVG value={`FS1:${ticket.ticketCode}`} size={170} includeMargin aria-label={`QR code for ticket ${ticket.ticketCode}`} /> : <span className="mono">QR available after payment</span>}<small>{ticket.ticketCode ? 'SCAN AT VENUE' : 'FLASHSEAT'}</small></div>
+  </article>;
+}
+
+export function BookingDetailPage() {
+  const { id = '' } = useParams();
+  const query = useQuery({ queryKey: ['booking', id], queryFn: () => api.booking(id) });
+  if (query.isLoading) return <Skeleton label="Loading tickets" />;
+  if (query.isError || !query.data) return <ErrorState message="We couldn't load this booking." retry={() => query.refetch()} />;
+  const booking = query.data;
+  return <section className="tickets-page">
+    <div className="page-heading"><p className="kicker">BOOKING {booking.bookingNumber}</p><h1>{booking.event?.name ?? 'Your tickets'}</h1><p>{booking.event?.venueName} · {booking.event ? date(booking.event.startsAt) : date(booking.createdAt)}</p></div>
+    <div className="ticket-detail-actions"><Link className="ghost" to="/bookings">Back to my tickets</Link><span className={`status ${booking.status.toLowerCase()}`}>{bookingStatus(booking.status)}</span></div>
+    <div className="tickets">{booking.items.map(ticket => <TicketCard key={ticket.id ?? ticket.seatId} booking={booking} ticket={ticket} />)}</div>
+  </section>;
+}
+
+export function CheckInPage() {
+  const [code, setCode] = useState('');
+  const [scanning, setScanning] = useState(false);
+  const [scannerMessage, setScannerMessage] = useState('Camera scanner is off.');
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const controlsRef = useRef<IScannerControls>();
+  const checkIn = useMutation({ mutationFn: (value: string) => api.checkIn(value) });
+  const duplicateResponse = checkIn.error instanceof ApiError && checkIn.error.status === 409 &&
+    typeof checkIn.error.problem.body === 'object' && checkIn.error.problem.body !== null &&
+    'ticketCode' in checkIn.error.problem.body
+    ? checkIn.error.problem.body as CheckInResponse
+    : null;
+  useEffect(() => () => { controlsRef.current?.stop(); }, []);
+  useEffect(() => {
+    if (!scanning || !videoRef.current) return;
+    let active = true;
+    const reader = new BrowserQRCodeReader();
+    setScannerMessage('Point the camera at a ticket QR code.');
+    void reader.decodeFromConstraints({
+      video: {
+        facingMode: { ideal: 'environment' },
+        width: { ideal: 1280 },
+        height: { ideal: 720 },
+      },
+    }, videoRef.current, (result) => {
+      if (!active || !result || checkIn.isPending) return;
+      const value = result.getText().trim();
+      if (!value) return;
+      setCode(value);
+      setScannerMessage('QR code read. Checking ticket…');
+      setScanning(false);
+      controlsRef.current?.stop();
+      checkIn.mutate(value);
+    }).then(controls => {
+      if (active) controlsRef.current = controls;
+      else controls.stop();
+    }).catch(error => {
+      if (!active) return;
+      setScanning(false);
+      setScannerMessage(error instanceof DOMException && error.name === 'NotAllowedError'
+        ? 'Camera permission was denied. Enter the ticket code manually.'
+        : 'Camera could not start. Enter the ticket code manually.');
+    });
+    return () => {
+      active = false;
+      controlsRef.current?.stop();
+    };
+  }, [scanning, checkIn.isPending]);
+  const submit = (event: React.FormEvent) => { event.preventDefault(); if (code.trim()) checkIn.mutate(code.trim()); };
+  return <section className="admin-page checkin-page">
+    <div className="page-heading"><p className="kicker">VENUE OPERATIONS</p><h1>Check in tickets.</h1><p>Scan each ticket once, or enter its code manually.</p></div>
+    <div className="checkin-layout">
+      <div className="scanner-panel">
+        {scanning ? <video ref={videoRef} className="scanner-video" aria-label="Ticket QR scanner" autoPlay muted playsInline /> : <div className="scanner-placeholder">{scannerMessage}</div>}
+        <p className="scanner-status" role="status">{scannerMessage}</p>
+        <button className="ghost" onClick={() => { setScannerMessage('Starting camera…'); setScanning(value => !value); }}>{scanning ? 'Stop camera' : 'Scan with camera'}</button>
+      </div>
+      <div className="checkin-form-panel"><form onSubmit={submit}><label htmlFor="ticket-code">Ticket code<input id="ticket-code" value={code} onChange={event => setCode(event.target.value)} placeholder="FS1:..." autoComplete="off" /></label><button className="button" disabled={!code.trim() || checkIn.isPending}>{checkIn.isPending ? 'Checking…' : 'Check in ticket'}</button></form>{checkIn.isError && <div className="error" role="alert"><p>{duplicateResponse ? 'This ticket was already checked in.' : checkIn.error.message}</p>{duplicateResponse && <p>{duplicateResponse.event?.name} · {duplicateResponse.ticket.section} {duplicateResponse.ticket.row}{duplicateResponse.ticket.number}{duplicateResponse.checkedInAt && ` · ${date(duplicateResponse.checkedInAt)}`}</p>}</div>}{checkIn.data && <div className="checkin-result" role="status"><strong>Ticket checked in.</strong><p>{checkIn.data.event?.name}</p><p>{checkIn.data.ticket.section} · {checkIn.data.ticket.row}{checkIn.data.ticket.number}</p><p>{checkIn.data.checkedInAt && date(checkIn.data.checkedInAt)}</p></div>}</div>
+    </div>
   </section>;
 }
 
