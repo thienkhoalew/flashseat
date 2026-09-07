@@ -1,6 +1,7 @@
 namespace FlashSeat.Events.Application;
 
-public sealed record SeatInput(string Section, string Row, int Number, decimal Price, string Currency = "VND");
+public sealed record SeatInput(string Section, string Row, int Number, decimal Price, string Currency = "VND",
+    decimal? LayoutX = null, decimal? LayoutY = null);
 
 public sealed record SaveEventRequest(
     string Name,
@@ -13,7 +14,10 @@ public sealed record SaveEventRequest(
     DateTimeOffset EndsAt,
     DateTimeOffset SalesStartAt,
     DateTimeOffset SalesEndAt,
-    IReadOnlyCollection<SeatInput> Seats);
+    IReadOnlyCollection<SeatInput> Seats,
+    string StageShape = "Proscenium",
+    decimal? StageX = null,
+    decimal? StageY = null);
 
 public sealed record EventListItem(
     Guid Id, string Name, string Slug, string ImageUrl, string VenueName,
@@ -22,14 +26,16 @@ public sealed record EventListItem(
     int? TotalSeatCount = null, int? AvailableSeatCount = null, int? HeldSeatCount = null,
     int? BookedSeatCount = null, long? InventoryVersion = null, DateTimeOffset? AvailabilityAsOf = null);
 
-public sealed record SeatResponse(Guid Id, string Section, string Row, int Number, decimal Price, string Currency);
+public sealed record SeatResponse(Guid Id, string Section, string Row, int Number, decimal Price, string Currency,
+    decimal? LayoutX = null, decimal? LayoutY = null);
 
 public sealed record EventDetailResponse(
     Guid Id, string Name, string Slug, string Description, string ImageUrl, string VenueName,
     string Address, DateTimeOffset StartsAt, DateTimeOffset EndsAt, DateTimeOffset SalesStartAt, DateTimeOffset SalesEndAt,
     string Status, IReadOnlyCollection<SeatResponse> Seats, string AvailabilityStatus = "Unknown",
     int? TotalSeatCount = null, int? AvailableSeatCount = null, int? HeldSeatCount = null,
-    int? BookedSeatCount = null, long? InventoryVersion = null, DateTimeOffset? AvailabilityAsOf = null);
+    int? BookedSeatCount = null, long? InventoryVersion = null, DateTimeOffset? AvailabilityAsOf = null,
+    string StageShape = "Proscenium", decimal? StageX = null, decimal? StageY = null);
 
 public sealed record PagedResponse<T>(IReadOnlyCollection<T> Items, int Page, int PageSize, int TotalCount);
 

@@ -21,10 +21,10 @@ public sealed record BookingResponse(Guid Id, string BookingNumber, Guid EventId
     BookingEventResponse? Event, IReadOnlyCollection<BookingItemResponse> Items);
 public sealed record EventMetadataResponse(Guid Id, string Name, string Slug, string Description, string ImageUrl,
     string VenueName, string Address, DateTimeOffset StartsAt, DateTimeOffset EndsAt, string Status, bool IsArchived = false);
-public sealed record CheckInRequest(string TicketCode);
+public sealed record CheckInRequest(Guid EventId, string TicketCode);
 public sealed record CheckInResponse(string TicketCode, string Status, DateTimeOffset? CheckedInAt,
     string BookingNumber, BookingEventResponse? Event, BookingItemResponse Ticket);
-public enum CheckInFailure { UnknownTicket, BookingNotConfirmed, AlreadyCheckedIn }
+public enum CheckInFailure { UnknownTicket, EventMismatch, BookingNotConfirmed, AlreadyCheckedIn }
 public sealed record CheckInAttemptResult(CheckInResponse? Response, CheckInFailure? Failure = null);
 public enum HoldAttemptFailure { SeatsUnavailable, ActiveHoldExists, LockContention, SalesNotOpen, SalesWindowUnavailable }
 public sealed record HoldAttemptResult(HoldResponse? Hold, IReadOnlyCollection<Guid> UnavailableSeatIds, HoldAttemptFailure? Failure = null);
@@ -41,6 +41,6 @@ public interface IBookingService
     Task<BookingResponse?> CreateBookingAsync(Guid userId, CreateBookingRequest request, CancellationToken cancellationToken);
     Task<BookingResponse?> GetBookingAsync(Guid userId, bool isAdmin, Guid bookingId, CancellationToken cancellationToken);
     Task<IReadOnlyCollection<BookingResponse>> GetBookingsAsync(Guid userId, CancellationToken cancellationToken);
-    Task<CheckInAttemptResult> CheckInAsync(Guid operatorId, string ticketCode, CancellationToken cancellationToken);
+    Task<CheckInAttemptResult> CheckInAsync(Guid operatorId, Guid eventId, string ticketCode, CancellationToken cancellationToken);
     Task ImportInventoryAsync(InventoryImportRequest request, CancellationToken cancellationToken);
 }

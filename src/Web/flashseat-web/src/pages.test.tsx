@@ -4,6 +4,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { BrowserRouter, MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AdminEventFormPage, AdminEventsPage } from './admin-pages';
+import { appendRowWithSeats, DEFAULT_STAGE_POSITION, emptySeatLayout, layoutFromSeats, placeStage, renumberLayout, rotateRow, serializeSeatLayout, SeatLayoutEditor, stagePosition, translateRow, translateStage } from './seat-layout-editor';
 import { ApiError, api, logout, saveAuth } from './api';
 import App from './App';
 import { AuthPage, BookingDetailPage, CheckInPage, CheckoutPage, EventDetailPage, HomePage, MyBookingsPage, SeatPage } from './pages';
@@ -50,7 +51,7 @@ describe('AuthPage',()=>{
 
 describe('HomePage',()=>{
   it('paginates and resets to page one when searching',async()=>{
-    const events=vi.spyOn(api,'events').mockImplementation(async(search,page=1)=>({items:[{id:`event-${page}`,name:search||`Event ${page}`,slug:'event',imageUrl:'https://example.com/event.jpg',venueName:'Venue',startsAt:'2026-09-01T12:00:00Z',endsAt:'2026-09-01T14:00:00Z',salesStartAt:'2026-08-01T12:00:00Z',salesEndAt:'2026-09-01T11:00:00Z',minPrice:100,currency:'USD',status:'Published'}],page,pageSize:12,totalCount:24}));
+    const events=vi.spyOn(api,'events').mockImplementation(async(search,page=1)=>({items:[{id:`event-${page}`,name:search||`Event ${page}`,slug:'event',imageUrl:'https://example.com/event.jpg',venueName:'Venue',startsAt:'2027-09-01T12:00:00Z',endsAt:'2027-09-01T14:00:00Z',salesStartAt:'2027-08-01T12:00:00Z',salesEndAt:'2027-09-01T11:00:00Z',minPrice:100,currency:'USD',status:'Published'}],page,pageSize:12,totalCount:24}));
     renderWithQuery(<HomePage/>);
     await screen.findByText('Event 1');
     fireEvent.click(screen.getByRole('button',{name:'Next'}));
@@ -59,8 +60,55 @@ describe('HomePage',()=>{
     await waitFor(()=>expect(events).toHaveBeenLastCalledWith('Jazz',1));
   });
 
+  it('renders upcoming events sorted by nearest start time in a one-card carousel',async()=>{
+    vi.spyOn(api,'events').mockResolvedValue({items:[
+      {id:'event-2',name:'Later Show',slug:'later-show',imageUrl:'https://example.com/later.jpg',venueName:'Venue Two',startsAt:'2027-08-25T12:00:00Z',endsAt:'2027-08-25T14:00:00Z',salesStartAt:'2027-08-18T10:00:00Z',salesEndAt:'2027-08-25T11:00:00Z',minPrice:120,currency:'USD',status:'Published'},
+      {id:'event-1',name:'Earlier Show',slug:'earlier-show',imageUrl:'https://example.com/earlier.jpg',venueName:'Venue One',startsAt:'2027-08-20T12:00:00Z',endsAt:'2027-08-20T14:00:00Z',salesStartAt:'2027-08-18T10:00:00Z',salesEndAt:'2027-08-20T11:00:00Z',minPrice:100,currency:'USD',status:'Published'},
+    ],page:1,pageSize:12,totalCount:2});
+    renderWithQuery(<HomePage/>);
+    const feed = await screen.findByRole('list',{name:'Upcoming event cards'});
+    expect(feed).toHaveAttribute('id','event-feed');
+    const links = screen.getAllByRole('link',{name:/^View /});
+    expect(links).toHaveLength(2);
+    expect(links[0]).toHaveAttribute('aria-label','View Earlier Show');
+    expect(links[1]).toHaveAttribute('aria-label','View Later Show');
+    expect(links[0]).toHaveAttribute('aria-current','true');
+    expect(links[1]).not.toHaveAttribute('aria-current');
+
+    const prevButton = screen.getByRole('button',{name:'Previous event'});
+    const nextButton = screen.getByRole('button',{name:'Next event'});
+    expect(prevButton).toBeDisabled();
+    expect(nextButton).toBeEnabled();
+
+    fireEvent.click(nextButton);
+    expect(links[0]).not.toHaveAttribute('aria-current');
+    expect(links[1]).toHaveAttribute('aria-current','true');
+    expect(prevButton).toBeEnabled();
+    expect(nextButton).toBeDisabled();
+
+    fireEvent.click(prevButton);
+    expect(links[0]).toHaveAttribute('aria-current','true');
+    expect(links[1]).not.toHaveAttribute('aria-current');
+    expect(prevButton).toBeDisabled();
+  });
+
+  it('reveals the event listing when clicking hero or explore button',async()=>{
+    const scrollIntoView = vi.fn();
+    const scrollTo = vi.fn();
+    Object.defineProperty(HTMLElement.prototype,'scrollIntoView',{value:scrollIntoView,configurable:true});
+    Object.defineProperty(window,'scrollTo',{value:scrollTo,configurable:true});
+    vi.spyOn(api,'events').mockResolvedValue({items:[],page:1,pageSize:12,totalCount:0});
+    renderWithQuery(<HomePage/>);
+
+    fireEvent.click(screen.getByRole('button',{name:/Explore events/}));
+    expect(scrollIntoView).toHaveBeenCalledWith({behavior:'smooth',block:'start'});
+
+    fireEvent.wheel(screen.getByRole('heading',{name:/Find your next/}));
+    expect(scrollIntoView).toHaveBeenCalledTimes(2);
+  });
+
   it('opens the event detail page from the event name',async()=>{
-    vi.spyOn(api,'events').mockResolvedValue({items:[{id:'event-1',name:'Morning Show',slug:'morning-show',imageUrl:'https://example.com/event.jpg',venueName:'Venue',startsAt:'2026-08-20T12:00:00Z',endsAt:'2026-08-20T14:00:00Z',salesStartAt:'2026-08-18T10:00:00Z',salesEndAt:'2026-08-20T11:00:00Z',minPrice:100,currency:'USD',status:'Published'}],page:1,pageSize:12,totalCount:1});
+    vi.spyOn(api,'events').mockResolvedValue({items:[{id:'event-1',name:'Morning Show',slug:'morning-show',imageUrl:'https://example.com/event.jpg',venueName:'Venue',startsAt:'2027-08-20T12:00:00Z',endsAt:'2027-08-20T14:00:00Z',salesStartAt:'2027-08-18T10:00:00Z',salesEndAt:'2027-08-20T11:00:00Z',minPrice:100,currency:'USD',status:'Published'}],page:1,pageSize:12,totalCount:1});
     renderWithQuery(<MemoryRouter initialEntries={['/']}><Routes><Route path="/" element={<HomePage/>}/><Route path="/events/:id" element={<p>Event detail reached</p>}/></Routes></MemoryRouter>,false);
     const eventCard = await screen.findByRole('link',{name:'View Morning Show'});
     expect(screen.queryByText('View event')).not.toBeInTheDocument();
@@ -69,7 +117,7 @@ describe('HomePage',()=>{
   });
 
   it('keeps sold-out events visible and gives Sold out precedence',async()=>{
-    vi.spyOn(api,'events').mockResolvedValue({items:[{id:'event-1',name:'Sold Show',slug:'sold-show',imageUrl:'https://example.com/event.jpg',venueName:'Venue',startsAt:'2026-08-20T12:00:00Z',endsAt:'2026-08-20T14:00:00Z',salesStartAt:'2026-08-18T10:00:00Z',salesEndAt:'2026-08-20T11:00:00Z',minPrice:100,currency:'USD',status:'Published',availabilityStatus:'SoldOut',availableSeatCount:0,totalSeatCount:1}],page:1,pageSize:12,totalCount:1});
+    vi.spyOn(api,'events').mockResolvedValue({items:[{id:'event-1',name:'Sold Show',slug:'sold-show',imageUrl:'https://example.com/event.jpg',venueName:'Venue',startsAt:'2027-08-20T12:00:00Z',endsAt:'2027-08-20T14:00:00Z',salesStartAt:'2027-08-18T10:00:00Z',salesEndAt:'2027-08-20T11:00:00Z',minPrice:100,currency:'USD',status:'Published',availabilityStatus:'SoldOut',availableSeatCount:0,totalSeatCount:1}],page:1,pageSize:12,totalCount:1});
     renderWithQuery(<HomePage/>);
     expect(await screen.findByText('Sold Show')).toBeInTheDocument();
     expect(screen.getByText('Sold out')).toBeInTheDocument();
@@ -148,64 +196,155 @@ describe('Role routes',()=>{
 });
 
 describe('AdminEventFormPage',()=>{
-  it('renders an English create form with one seat',()=>{
+  it('renders the stage and seat layout editor',()=>{
     const queryClient=new QueryClient({defaultOptions:{queries:{retry:false},mutations:{retry:false}}});
     render(<QueryClientProvider client={queryClient}><MemoryRouter initialEntries={['/admin/events/new']}><Routes><Route path="/admin/events/new" element={<AdminEventFormPage/>}/></Routes></MemoryRouter></QueryClientProvider>);
     expect(screen.getByRole('heading',{name:'Create event'})).toBeInTheDocument();
-    expect(screen.getByRole('group',{name:'Event details'})).toBeInTheDocument();
-    expect(screen.getByRole('group',{name:'Venue'})).toBeInTheDocument();
-    expect(screen.getByRole('group',{name:'Schedule'})).toBeInTheDocument();
-    expect(screen.getByRole('group',{name:'Seat inventory'})).toBeInTheDocument();
-    expect(screen.getAllByLabelText('Section')).toHaveLength(1);
-    expect(screen.getByRole('button',{name:'Remove'})).toBeDisabled();
-    fireEvent.click(screen.getByRole('button',{name:'Add seat'}));
-    expect(screen.getAllByLabelText('Section')).toHaveLength(2);
+    expect(screen.getByRole('group',{name:'Seat layout'})).toBeInTheDocument();
+    expect(screen.getByRole('heading',{name:'Stage shapes'})).toBeInTheDocument();
+    expect(screen.getByLabelText('Row seat type')).toBeInTheDocument();
+    expect(screen.getByLabelText('Row seat quantity')).toBeInTheDocument();
+    expect(screen.getByRole('button',{name:'Add row'})).toBeInTheDocument();
     expect(screen.getByRole('button',{name:'Save draft'})).toBeInTheDocument();
   });
 
-  it('renumbers seats after removing one',()=>{
-    const queryClient=new QueryClient({defaultOptions:{queries:{retry:false},mutations:{retry:false}}});
-    render(<QueryClientProvider client={queryClient}><MemoryRouter initialEntries={['/admin/events/new']}><Routes><Route path="/admin/events/new" element={<AdminEventFormPage/>}/></Routes></MemoryRouter></QueryClientProvider>);
-    for(let index=1;index<6;index++) fireEvent.click(screen.getByRole('button',{name:'Add seat'}));
-    fireEvent.click(screen.getAllByRole('button',{name:'Remove'})[4]);
-    expect(screen.getAllByLabelText('Number')).toHaveLength(5);
-    expect(screen.getAllByLabelText('Number').map(input=>(input as HTMLInputElement).value)).toEqual(['1','2','3','4','5']);
-    fireEvent.click(screen.getByRole('button',{name:'Add seat'}));
-    expect(screen.getAllByLabelText('Number').map(input=>(input as HTMLInputElement).value)).toEqual(['1','2','3','4','5','6']);
+  it('preserves earlier rows when appending another generated row',()=>{
+    const type={id:'type-vip',name:'VIP',price:500000,currency:'VND'};
+    const first=appendRowWithSeats(emptySeatLayout(),'VIP','A',type,4);
+    const firstSeats=first.seats.map(seat=>({ ...seat }));
+    const next=appendRowWithSeats(first,'VIP','B',type,2);
+    expect(next.rows).toHaveLength(2);
+    expect(next.rows[0].seatIds).toEqual(first.rows[0].seatIds);
+    expect(next.seats.slice(0,4)).toEqual(firstSeats);
+    expect(next.seats.slice(4).map(seat=>seat.number)).toEqual([1,2]);
+    expect(next.seats.slice(4).every(seat=>seat.section==='VIP'&&seat.row==='B'&&seat.price===500000&&seat.currency==='VND')).toBe(true);
   });
 
-  it('numbers seats independently for each row',()=>{
-    const queryClient=new QueryClient({defaultOptions:{queries:{retry:false},mutations:{retry:false}}});
-    render(<QueryClientProvider client={queryClient}><MemoryRouter initialEntries={['/admin/events/new']}><Routes><Route path="/admin/events/new" element={<AdminEventFormPage/>}/></Routes></MemoryRouter></QueryClientProvider>);
-    fireEvent.click(screen.getByRole('button',{name:'Add seat'}));
-    fireEvent.change(screen.getAllByLabelText('Row')[1],{target:{value:'B'}});
-    fireEvent.change(screen.getAllByLabelText('Number')[1],{target:{value:'1'}});
-    fireEvent.click(screen.getByRole('button',{name:'Add seat'}));
-    expect(screen.getAllByLabelText('Row').map(input=>(input as HTMLInputElement).value)).toEqual(['A','B','B']);
-    expect(screen.getAllByLabelText('Number').map(input=>(input as HTMLInputElement).value)).toEqual(['1','1','2']);
-    fireEvent.click(screen.getAllByRole('button',{name:'Remove'})[1]);
-    expect(screen.getAllByLabelText('Row').map(input=>(input as HTMLInputElement).value)).toEqual(['A','B']);
-    expect(screen.getAllByLabelText('Number').map(input=>(input as HTMLInputElement).value)).toEqual(['1','1']);
+  it('selects a stage preset',()=>{
+    const onChange=vi.fn();
+    render(<SeatLayoutEditor value={emptySeatLayout()} onChange={onChange}/>);
+    fireEvent.click(screen.getByRole('button',{name:/Arena/}));
+    expect(onChange).toHaveBeenCalledWith(expect.objectContaining({stageShape:'Arena'}));
+  });
+
+  it('starts with empty seat types and allows adding custom seat types',()=>{
+    const onChange=vi.fn();
+    const layout = emptySeatLayout();
+    expect(layout.seatTypes).toEqual([]);
+    const { rerender } = render(<SeatLayoutEditor value={layout} onChange={onChange}/>);
+    expect(screen.getByText(/No seat types yet/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Add row' })).toBeDisabled();
+
+    fireEvent.change(screen.getByLabelText('Seat type name'), { target: { value: 'VIP Gold' } });
+    fireEvent.change(screen.getByLabelText('Seat type price'), { target: { value: '1500000' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Add type' }));
+    expect(onChange).toHaveBeenCalledWith(expect.objectContaining({
+      seatTypes: [expect.objectContaining({ name: 'VIP Gold', price: 1500000, currency: 'VND' })],
+    }));
+
+    const withType = { ...layout, seatTypes: [{ id: 'type-vip', name: 'VIP Gold', price: 1500000, currency: 'VND' }] };
+    rerender(<SeatLayoutEditor value={withType} onChange={onChange}/>);
+    expect(screen.getByRole('button', { name: 'Add row' })).not.toBeDisabled();
+    expect(screen.getByRole('option', { name: 'VIP Gold' })).toBeInTheDocument();
+  });
+});
+
+describe('Seat layout helpers',()=>{
+  const seats=[
+    {id:'seat-2',section:'Main',row:'A',number:2,price:100,currency:'USD'},
+    {id:'seat-1',section:'Main',row:'A',number:1,price:100,currency:'USD'},
+  ];
+  it('hydrates legacy seats into rows and serializes coordinates',()=>{
+    const layout=layoutFromSeats('Thrust',seats);
+    expect(layout.stageShape).toBe('Thrust');
+    expect(layout.rows[0].seatIds).toEqual(['seat-1','seat-2']);
+    expect(serializeSeatLayout(layout)).toHaveLength(2);
+    expect(layout.seats.every(seat => typeof seat.layoutX === 'number' && typeof seat.layoutY === 'number')).toBe(true);
+  });
+
+  it('hydrates and moves the persisted stage position',()=>{
+    const layout = layoutFromSeats('Arena', seats, 22.5, 64.25);
+    expect(stagePosition(layout)).toEqual({ x: 22.5, y: 64.25 });
+    const moved = translateStage(layout, { x: 100, y: -50 }, { width: 1000, height: 500 }, { width: 100, height: 100 });
+    expect(moved.stageX).toBe(32.5);
+    expect(moved.stageY).toBe(54.25);
+    expect(moved.stageShape).toBe('Arena');
+    expect(moved.rows).toEqual(layout.rows);
+    expect(moved.seats).toEqual(layout.seats);
+  });
+
+  it('uses the legacy stage position and clamps placement to the canvas',()=>{
+    const layout = emptySeatLayout();
+    expect(stagePosition({ ...layout, stageX: undefined, stageY: undefined })).toEqual(DEFAULT_STAGE_POSITION);
+    const placed = placeStage(layout, { x: 0, y: 0 }, { left: 100, top: 50, width: 1000, height: 500 }, { width: 200, height: 100 });
+    expect(placed.stageX).toBe(10);
+    expect(placed.stageY).toBe(10);
+  });
+
+  it('keeps row coordinates when numbering changes',()=>{
+    const layout=layoutFromSeats('Thrust', [
+      { id:'seat-1', section:'Main', row:'A', number:1, price:100, currency:'USD', layoutX:35, layoutY:40 },
+      { id:'seat-2', section:'Main', row:'A', number:2, price:100, currency:'USD', layoutX:45, layoutY:40 },
+    ]);
+    const before = layout.seats.map(seat => [seat.layoutX, seat.layoutY]);
+    const renumbered = renumberLayout(layout);
+    expect(renumbered.seats.map(seat => [seat.layoutX, seat.layoutY])).toEqual(before);
+  });
+
+  it('moves and rotates only the selected row',()=>{
+    const layout = layoutFromSeats('Thrust', [
+      { id:'seat-1', section:'Main', row:'A', number:1, price:100, currency:'USD', layoutX:30, layoutY:30 },
+      { id:'seat-2', section:'Main', row:'A', number:2, price:100, currency:'USD', layoutX:40, layoutY:30 },
+      { id:'seat-3', section:'Main', row:'B', number:1, price:100, currency:'USD', layoutX:30, layoutY:60 },
+      { id:'seat-4', section:'Main', row:'B', number:2, price:100, currency:'USD', layoutX:40, layoutY:60 },
+    ]);
+    const moved = translateRow(layout, layout.rows[0].id, { x: 10, y: 5 });
+    expect(moved.seats.find(seat => seat.id === 'seat-1')).toMatchObject({ layoutX: 40, layoutY: 35 });
+    expect(moved.seats.find(seat => seat.id === 'seat-3')).toMatchObject({ layoutX: 30, layoutY: 60 });
+    const rotated = rotateRow(moved, moved.rows[0].id, 90);
+    expect(rotated.seats.find(seat => seat.id === 'seat-1')).toMatchObject({ layoutX: 45, layoutY: 30 });
+    expect(rotated.seats.find(seat => seat.id === 'seat-2')).toMatchObject({ layoutX: 45, layoutY: 40 });
+    expect(rotated.seats.find(seat => seat.id === 'seat-3')).toMatchObject({ layoutX: 30, layoutY: 60 });
   });
 });
 
 describe('AdminEventsPage',()=>{
-  const adminEvent=(status:string)=>({id:`event-${status.toLowerCase()}`,name:`${status} event`,slug:`${status.toLowerCase()}-event`,imageUrl:'https://example.com/event.jpg',venueName:'Venue',startsAt:'2026-09-01T12:00:00Z',endsAt:'2026-09-01T14:00:00Z',salesStartAt:'2026-08-01T12:00:00Z',salesEndAt:'2026-09-01T11:00:00Z',minPrice:100,currency:'USD',status});
+  const adminEvent=(status:string)=>({id:`event-${status.toLowerCase()}`,name:`${status} event`,slug:`${status.toLowerCase()}-event`,imageUrl:'https://example.com/event.jpg',venueName:'Venue',startsAt:'2027-09-01T12:00:00Z',endsAt:'2027-09-01T14:00:00Z',salesStartAt:'2027-08-01T12:00:00Z',salesEndAt:'2027-09-01T11:00:00Z',minPrice:100,currency:'USD',status});
   const renderAdmin=(status:string)=>{
     vi.spyOn(api,'adminEvents').mockResolvedValue({items:[adminEvent(status)],page:1,pageSize:12,totalCount:1});
     renderWithQuery(<AdminEventsPage/>);
   };
 
+  const openActions = async (status: string) => {
+    expect(await screen.findByText(`${status} event`)).toBeInTheDocument();
+    const trigger = screen.getByRole('button', { name: `Actions for ${status} event` });
+    expect(trigger).toHaveAttribute('aria-expanded', 'false');
+    fireEvent.click(trigger);
+    expect(trigger).toHaveAttribute('aria-expanded', 'true');
+  };
+
   it.each([
-    ['Draft',['Edit','Publish','Cancel','Archive'],['View public event','Return to draft','Republish','Restore draft','No lifecycle actions']],
-    ['Published',['View public event','Return to draft','Cancel'],['Edit','Publish','Republish','Restore draft','Archive','No lifecycle actions']],
-    ['Cancelled',['Republish','Restore draft','Delete'],['Edit','Publish','View public event','Return to draft','Cancel','Archive','No lifecycle actions']],
-    ['Ended',['Delete'],['Edit','Publish','Cancel','View public event','Return to draft','Republish','Restore draft','Archive','No lifecycle actions']],
+    ['Draft',['Edit event','Publish','Cancel','Archive'],['View public event','Return to draft','Republish','Restore draft','Delete']],
+    ['Published',['View public event','Return to draft','Cancel'],['Edit event','Publish','Republish','Restore draft','Archive','Delete']],
+    ['Cancelled',['Republish','Restore draft','Delete'],['Edit event','Publish','View public event','Return to draft','Cancel','Archive']],
+    ['Ended',['Delete'],['Edit event','Publish','Cancel','View public event','Return to draft','Republish','Restore draft','Archive']],
   ] as const)('shows the valid action matrix for %s',async(status,visible,hidden)=>{
     renderAdmin(status);
-    expect(await screen.findByText(`${status} event`)).toBeInTheDocument();
-    visible.forEach(label=>expect(screen.getByText(label)).toBeInTheDocument());
-    hidden.forEach(label=>expect(screen.queryByText(label)).not.toBeInTheDocument());
+    await openActions(status);
+    visible.forEach(label=>expect(screen.getByRole('menuitem',{name:label})).toBeInTheDocument());
+    hidden.forEach(label=>expect(screen.queryByRole('menuitem',{name:label})).not.toBeInTheDocument());
+  });
+
+  it('closes the action menu with Escape and an outside click',async()=>{
+    renderAdmin('Draft');
+    await openActions('Draft');
+    const trigger = screen.getByRole('button', { name: 'Actions for Draft event' });
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(trigger).toHaveAttribute('aria-expanded', 'false');
+    fireEvent.click(trigger);
+    expect(screen.getByRole('menuitem',{name:'Publish'})).toBeInTheDocument();
+    fireEvent.mouseDown(document.body);
+    expect(screen.queryByRole('menuitem',{name:'Publish'})).not.toBeInTheDocument();
   });
 
   it.each([
@@ -219,7 +358,8 @@ describe('AdminEventsPage',()=>{
     const mutation=vi.spyOn(api,method).mockResolvedValue(undefined);
     vi.spyOn(window,'confirm').mockReturnValue(true);
     renderAdmin(status);
-    fireEvent.click(await screen.findByText(label));
+    await openActions(status);
+    fireEvent.click(screen.getByRole('menuitem',{name:label}));
     expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining(status === 'Published' ? 'Return' : label.split(' ')[0]));
     await waitFor(()=>expect(mutation).toHaveBeenCalledWith(`event-${status.toLowerCase()}`));
   });
@@ -228,7 +368,8 @@ describe('AdminEventsPage',()=>{
     vi.spyOn(window,'confirm').mockReturnValue(true);
     vi.spyOn(api,'archiveEvent').mockRejectedValue(new ApiError(409,{title:'This event has booking activity and cannot be changed.',code:'sales_activity_exists',unavailableSeatIds:[]}));
     renderAdmin('Draft');
-    fireEvent.click(await screen.findByText('Archive'));
+    await openActions('Draft');
+    fireEvent.click(screen.getByRole('menuitem',{name:'Archive'}));
     expect(await screen.findByRole('alert')).toHaveTextContent('sales_activity_exists: This event has booking activity and cannot be changed.');
   });
 });
@@ -334,12 +475,29 @@ describe('BookingDetailPage',()=>{
 });
 
 describe('CheckInPage',()=>{
-  it('submits a manually entered ticket code',async()=>{
-    vi.spyOn(api,'checkIn').mockResolvedValue({ticketCode:'0123456789ABCDEF0123456789ABCDEF',status:'CheckedIn',checkedInAt:'2026-08-20T13:00:00Z',bookingNumber:'FS-004',event:null,ticket:{id:'item-1',seatId:'seat-1',section:'Main',row:'A',number:1,price:100,currency:'USD',ticketCode:'0123456789ABCDEF0123456789ABCDEF',checkInStatus:'CheckedIn'}});
+  const event = { id:'event-1', name:'Arena Show', slug:'arena-show', imageUrl:'', venueName:'Main Hall', startsAt:'2026-08-20T12:00:00Z', endsAt:'2026-08-20T14:00:00Z', salesStartAt:'2026-08-19T12:00:00Z', salesEndAt:'2026-08-20T12:00:00Z', minPrice:100, currency:'USD', status:'Published' };
+
+  it('requires an event before submitting a manually entered ticket code',async()=>{
+    vi.spyOn(api,'events').mockResolvedValue({items:[event],page:1,pageSize:100,totalCount:1});
+    const checkIn = vi.spyOn(api,'checkIn').mockResolvedValue({ticketCode:'0123456789ABCDEF0123456789ABCDEF',status:'CheckedIn',checkedInAt:'2026-08-20T13:00:00Z',bookingNumber:'FS-004',event:null,ticket:{id:'item-1',seatId:'seat-1',section:'Main',row:'A',number:1,price:100,currency:'USD',ticketCode:'0123456789ABCDEF0123456789ABCDEF',checkInStatus:'CheckedIn'}});
     renderWithQuery(<CheckInPage/>);
+    expect(screen.getByRole('button',{name:'Scan with camera'})).toBeDisabled();
+    expect(screen.getByRole('button',{name:'Check in ticket'})).toBeDisabled();
+    fireEvent.change(await screen.findByLabelText('Event'),{target:{value:'event-1'}});
     fireEvent.change(screen.getByLabelText('Ticket code'),{target:{value:'FS1:0123456789ABCDEF0123456789ABCDEF'}});
     fireEvent.click(screen.getByRole('button',{name:'Check in ticket'}));
     expect(await screen.findByText('Ticket checked in.')).toBeInTheDocument();
-    expect(api.checkIn).toHaveBeenCalledWith('FS1:0123456789ABCDEF0123456789ABCDEF');
+    expect(checkIn).toHaveBeenCalledWith('event-1','FS1:0123456789ABCDEF0123456789ABCDEF');
+  });
+
+  it('shows an event mismatch without clearing the selected event',async()=>{
+    vi.spyOn(api,'events').mockResolvedValue({items:[event],page:1,pageSize:100,totalCount:1});
+    vi.spyOn(api,'checkIn').mockRejectedValue(new ApiError(409,{code:'ticket_event_mismatch',title:'This ticket belongs to another event.',unavailableSeatIds:[],body:{code:'ticket_event_mismatch',title:'This ticket belongs to another event.'}}));
+    renderWithQuery(<CheckInPage/>);
+    fireEvent.change(await screen.findByLabelText('Event'),{target:{value:'event-1'}});
+    fireEvent.change(screen.getByLabelText('Ticket code'),{target:{value:'FS1:0123456789ABCDEF0123456789ABCDEF'}});
+    fireEvent.click(screen.getByRole('button',{name:'Check in ticket'}));
+    expect(await screen.findByText('This ticket belongs to another event.')).toBeInTheDocument();
+    expect(screen.getByLabelText('Event')).toHaveValue('event-1');
   });
 });

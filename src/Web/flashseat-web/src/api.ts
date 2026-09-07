@@ -1,8 +1,9 @@
 export type EventItem = { id:string; name:string; slug:string; imageUrl:string; venueName:string; startsAt:string; endsAt:string; salesStartAt:string; salesEndAt:string; minPrice:number; currency:string; status:string; availabilityStatus?:'Available'|'SoldOut'|'Unknown'; totalSeatCount?:number; availableSeatCount?:number; heldSeatCount?:number; bookedSeatCount?:number; inventoryVersion?:number; availabilityAsOf?:string };
-export type Seat = { id:string; section:string; row:string; number:number; price:number; currency:string };
+export type StageShape = 'Proscenium'|'Thrust'|'Arena'|'InTheRound';
+export type Seat = { id:string; section:string; row:string; number:number; price:number; currency:string; layoutX?:number; layoutY?:number };
 export type SeatInput = Omit<Seat,'id'>;
-export type EventDetail = { id:string; name:string; slug:string; description:string; imageUrl:string; venueName:string; address:string; startsAt:string; endsAt:string; salesStartAt:string; salesEndAt:string; status:string; seats:Seat[]; availabilityStatus?:'Available'|'SoldOut'|'Unknown'; totalSeatCount?:number; availableSeatCount?:number; heldSeatCount?:number; bookedSeatCount?:number; inventoryVersion?:number; availabilityAsOf?:string };
-export type SaveEventInput = Pick<EventDetail,'name'|'slug'|'description'|'imageUrl'|'venueName'|'address'|'startsAt'|'endsAt'|'salesStartAt'|'salesEndAt'> & { seats:SeatInput[] };
+export type EventDetail = { id:string; name:string; slug:string; description:string; imageUrl:string; venueName:string; address:string; startsAt:string; endsAt:string; salesStartAt:string; salesEndAt:string; status:string; stageShape?:StageShape; stageX?:number; stageY?:number; seats:Seat[]; availabilityStatus?:'Available'|'SoldOut'|'Unknown'; totalSeatCount?:number; availableSeatCount?:number; heldSeatCount?:number; bookedSeatCount?:number; inventoryVersion?:number; availabilityAsOf?:string };
+export type SaveEventInput = Pick<EventDetail,'name'|'slug'|'description'|'imageUrl'|'venueName'|'address'|'startsAt'|'endsAt'|'salesStartAt'|'salesEndAt'> & { stageShape?:StageShape; stageX?:number; stageY?:number; seats:SeatInput[] };
 export type PagedResponse<T> = { items:T[]; page:number; pageSize:number; totalCount:number };
 export type Availability = { seatId:string; status:string; holdExpiresAt?:string };
 export type HoldItem = { seatId:string; section:string; row:string; number:number; price:number };
@@ -55,7 +56,7 @@ export const api={
   createPayment:(bookingId:string,result:string,key:string)=>request<Payment>('/api/payments',{method:'POST',headers:{'Idempotency-Key':key},body:JSON.stringify({bookingId,simulateResult:result})}),
   payment:(id:string)=>request<Payment>(`/api/payments/${id}`),
   bookings:()=>request<Booking[]>('/api/bookings/me'),
-  checkIn:(ticketCode:string)=>request<CheckInResponse>('/api/admin/check-ins',{method:'POST',body:JSON.stringify({ticketCode})}),
+  checkIn:(eventId:string,ticketCode:string)=>request<CheckInResponse>('/api/admin/check-ins',{method:'POST',body:JSON.stringify({eventId,ticketCode})}),
   adminEvents:(search='',page=1,pageSize=12)=>request<PagedResponse<EventItem>>(`/api/admin/events/?search=${encodeURIComponent(search)}&page=${page}&pageSize=${pageSize}`),
   adminEvent:(id:string)=>request<EventDetail>(`/api/admin/events/${id}`),
   createEvent:(input:SaveEventInput)=>request<EventDetail>('/api/admin/events/',{method:'POST',body:JSON.stringify(input)}),

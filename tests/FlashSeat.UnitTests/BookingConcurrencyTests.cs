@@ -166,6 +166,39 @@ public sealed class BookingConcurrencyTests
     }
 
     [Fact]
+    public async Task Check_in_rejects_ticket_from_another_event_without_mutating_it()
+    {
+        await using var postgres = new PostgreSqlBuilder().WithDatabase("flashseat_booking_checkin_tests").Build();
+        await using var redis = new RedisBuilder().Build();
+        await Task.WhenAll(postgres.StartAsync(), redis.StartAsync());
+        var options = new DbContextOptionsBuilder<BookingDbContext>().UseNpgsql(postgres.GetConnectionString()).Options;
+        var eventA = Guid.NewGuid();
+        var eventB = Guid.NewGuid();
+        var bookingId = Guid.NewGuid();
+        var ticketCode = "0123456789ABCDEF0123456789ABCDEF";
+        await using (var setup = new BookingDbContext(options))
+        {
+            await setup.Database.EnsureCreatedAsync();
+            var booking = new global::FlashSeat.Booking.Domain.Booking(bookingId, "FS-CHECKIN", Guid.NewGuid(), eventA, Guid.NewGuid(), 100, "USD", DateTimeOffset.UtcNow);
+            booking.Confirm(Guid.NewGuid(), DateTimeOffset.UtcNow);
+            booking.Items.Add(new BookingItem(Guid.NewGuid(), bookingId, Guid.NewGuid(), "Main", "A", 1, 100, "USD", ticketCode));
+            setup.Bookings.Add(booking);
+            await setup.SaveChangesAsync();
+        }
+
+        await using var connection = await ConnectionMultiplexer.ConnectAsync(redis.GetConnectionString());
+        await using var db = new BookingDbContext(options);
+        var service = new BookingService(db, new RedisSeatLock(connection), OpenSalesClient(), TimeProvider.System);
+
+        var result = await service.CheckInAsync(Guid.NewGuid(), eventB, $"FS1:{ticketCode}", CancellationToken.None);
+
+        result.Failure.Should().Be(CheckInFailure.EventMismatch);
+        result.Response.Should().BeNull();
+        await using var verify = new BookingDbContext(options);
+        (await verify.BookingItems.SingleAsync()).CheckInStatus.Should().Be(TicketCheckInStatus.NotCheckedIn);
+    }
+
+    [Fact]
     public async Task Events_failure_blocks_new_holds()
     {
         await using var postgres = new PostgreSqlBuilder().WithDatabase("flashseat_booking_sales_failure_tests").Build();

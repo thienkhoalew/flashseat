@@ -74,6 +74,8 @@ public sealed class EventService(
         var entity = new EventEntity(Guid.NewGuid(), request.Name, request.Slug, request.Description, request.ImageUrl,
             request.VenueName, request.Address, request.StartsAt, request.EndsAt, request.SalesStartAt,
             request.SalesEndAt, now);
+        entity.SetStageShape(ParseStageShape(request.StageShape));
+        entity.SetStagePosition(request.StageX, request.StageY);
         AddSeats(entity, request.Seats);
         dbContext.Events.Add(entity);
         await dbContext.SaveChangesAsync(cancellationToken);
@@ -91,6 +93,8 @@ public sealed class EventService(
         await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
         entity.Update(request.Name, request.Slug, request.Description, request.ImageUrl, request.VenueName,
             request.Address, request.StartsAt, request.EndsAt, request.SalesStartAt, request.SalesEndAt, now);
+        entity.SetStageShape(ParseStageShape(request.StageShape));
+        entity.SetStagePosition(request.StageX, request.StageY);
         dbContext.Seats.RemoveRange(entity.Seats);
         await dbContext.SaveChangesAsync(cancellationToken);
         dbContext.ChangeTracker.Clear();
@@ -204,8 +208,11 @@ public sealed class EventService(
     private static void AddSeats(EventEntity entity, IEnumerable<SeatInput> seats)
     {
         foreach (var seat in seats)
-            entity.Seats.Add(new Seat(Guid.NewGuid(), entity.Id, seat.Section, seat.Row, seat.Number, seat.Price, seat.Currency));
+            entity.Seats.Add(new Seat(Guid.NewGuid(), entity.Id, seat.Section, seat.Row, seat.Number, seat.Price, seat.Currency, seat.LayoutX, seat.LayoutY));
     }
+
+    private static StageShape ParseStageShape(string value) =>
+        Enum.Parse<StageShape>(value, true);
 
     private async Task<IReadOnlyCollection<EventListItem>> EnrichAsync(IReadOnlyCollection<EventListItem> items, CancellationToken cancellationToken)
     {
@@ -248,6 +255,6 @@ public sealed class EventService(
             x.Status == EventStatus.Completed || x.EndsAt <= now
                 ? EventStatus.Ended.ToString() : x.Status.ToString(),
             x.Seats.OrderBy(s => s.Section).ThenBy(s => s.Row).ThenBy(s => s.Number)
-                .Select(s => new SeatResponse(s.Id, s.Section, s.Row, s.Number, s.Price, s.Currency)).ToList(),
-            "Unknown", null, null, null, null, null, null);
+                .Select(s => new SeatResponse(s.Id, s.Section, s.Row, s.Number, s.Price, s.Currency, s.LayoutX, s.LayoutY)).ToList(),
+            "Unknown", null, null, null, null, null, null, x.StageShape.ToString(), x.StageX, x.StageY);
 }

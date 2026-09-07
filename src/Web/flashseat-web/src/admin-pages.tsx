@@ -1,10 +1,11 @@
-import { cloneElement, useId, useState, type ReactElement } from 'react';
-import { useFieldArray, useForm } from 'react-hook-form';
+import { cloneElement, useEffect, useId, useMemo, useRef, useState, type ReactElement } from 'react';
+import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { z } from 'zod';
 import { api, date, type EventDetail, money, type SaveEventInput } from './api';
+import { emptySeatLayout, layoutFromSeats, serializeSeatLayout, SeatLayoutEditor, type SeatLayoutDraft } from './seat-layout-editor';
 
 const seatSchema = z.object({
   section: z.string().min(1, 'Section is required').max(50),
@@ -24,6 +25,7 @@ const eventSchema = z.object({
   endsAt: z.string().min(1),
   salesStartAt: z.string().min(1),
   salesEndAt: z.string().min(1),
+  stageShape: z.enum(['Proscenium', 'Thrust', 'Arena', 'InTheRound']),
   seats: z.array(seatSchema).min(1, 'Add at least one seat'),
 }).superRefine((value, context) => {
   const start = new Date(value.startsAt);
@@ -41,7 +43,6 @@ const eventSchema = z.object({
   });
 });
 type EventForm = z.infer<typeof eventSchema>;
-const emptySeat = { section: 'Standard', row: 'A', number: 1, price: 300000, currency: 'VND' };
 const localDate = (value: string) => {
   const date = new Date(value);
   date.setMinutes(date.getMinutes() - date.getTimezoneOffset());
@@ -53,8 +54,9 @@ const defaults = (event?: EventDetail): EventForm => event ? {
   endsAt: localDate(event.endsAt),
   salesStartAt: localDate(event.salesStartAt),
   salesEndAt: localDate(event.salesEndAt),
-  seats: event.seats.map(seat => ({ section: seat.section, row: seat.row, number: seat.number, price: seat.price, currency: seat.currency })),
-} : { name: '', slug: '', description: '', imageUrl: '', venueName: '', address: '', startsAt: '', endsAt: '', salesStartAt: '', salesEndAt: '', seats: [emptySeat] };
+  stageShape: event.stageShape ?? 'Proscenium',
+  seats: event.seats.map(seat => ({ section: seat.section, row: seat.row, number: seat.number, price: seat.price, currency: seat.currency, layoutX: seat.layoutX, layoutY: seat.layoutY })),
+} : { name: '', slug: '', description: '', imageUrl: '', venueName: '', address: '', startsAt: '', endsAt: '', salesStartAt: '', salesEndAt: '', stageShape: 'Proscenium', seats: [] };
 
 export function AdminEventsPage() {
   const [search, setSearch] = useState('');
@@ -87,6 +89,24 @@ export function AdminEventsPage() {
     if (window.confirm(messages[type])) action.mutate({ id, type });
   };
   const pages = query.data ? Math.max(1, Math.ceil(query.data.totalCount / query.data.pageSize)) : 1;
+  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+  const [menuDirection, setMenuDirection] = useState<'down' | 'up'>('down');
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const closeMenu = (event: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) setOpenMenuId(null);
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setOpenMenuId(null);
+    };
+    document.addEventListener('mousedown', closeMenu);
+    document.addEventListener('keydown', closeOnEscape);
+    return () => {
+      document.removeEventListener('mousedown', closeMenu);
+      document.removeEventListener('keydown', closeOnEscape);
+    };
+  }, []);
 
   return <section className="admin-page">
     <div className="admin-toolbar" aria-busy={action.isPending}>
@@ -107,24 +127,40 @@ export function AdminEventsPage() {
               <div><span className="admin-cell-label">Event</span><h2>{event.name}</h2></div>
               <div><span className="admin-cell-label">Venue / date</span><p>{event.venueName}</p><p className="mono">{date(event.startsAt)}</p></div>
               <div><span className="admin-cell-label">From</span><strong className="mono">{money(event.minPrice, event.currency)}</strong></div>
-              <div className="admin-actions">
-                {event.status === 'Draft' && <>
-                  <Link className="ghost" to={`/admin/events/${event.id}/edit`}>Edit</Link>
-                  <button className="button small" disabled={action.isPending} onClick={() => run(event.id, 'publish', event.name)}>Publish</button>
-                  <button className="danger" disabled={action.isPending} onClick={() => run(event.id, 'cancel', event.name)}>Cancel</button>
-                  <button className="danger" disabled={action.isPending} onClick={() => run(event.id, 'archive', event.name)}>Archive</button>
-                </>}
-                {event.status === 'Published' && <>
-                  <Link className="ghost" to={`/events/${event.id}`}>View public event</Link>
-                  <button className="ghost" disabled={action.isPending} onClick={() => run(event.id, 'unpublish', event.name)}>Return to draft</button>
-                  <button className="danger" disabled={action.isPending} onClick={() => run(event.id, 'cancel', event.name)}>Cancel</button>
-                </>}
-                {event.status === 'Cancelled' && <>
-                  <button className="button small" disabled={action.isPending} onClick={() => run(event.id, 'republish', event.name)}>Republish</button>
-                  <button className="ghost" disabled={action.isPending} onClick={() => run(event.id, 'restore', event.name)}>Restore draft</button>
-                  <button className="danger" disabled={action.isPending} onClick={() => run(event.id, 'archive', event.name, 'Delete')}>Delete</button>
-                </>}
-                {event.status === 'Ended' && <button className="danger" disabled={action.isPending} onClick={() => run(event.id, 'archive', event.name, 'Delete')}>Delete</button>}
+              <div className="admin-actions" ref={openMenuId === event.id ? menuRef : undefined}>
+                <button
+                  className="admin-menu-trigger"
+                  type="button"
+                  aria-label={`Actions for ${event.name}`}
+                  aria-haspopup="menu"
+                  aria-expanded={openMenuId === event.id}
+                  onClick={clickEvent => {
+                    const rowBottom = clickEvent.currentTarget.closest('.admin-row')?.getBoundingClientRect().bottom ?? 0;
+                    setMenuDirection(window.innerHeight - rowBottom < 190 ? 'up' : 'down');
+                    setOpenMenuId(current => current === event.id ? null : event.id);
+                  }}
+                >
+                  <span aria-hidden="true">•••</span>
+                </button>
+                {openMenuId === event.id && <div className={`admin-action-menu ${menuDirection === 'up' ? 'is-up' : ''}`} role="menu">
+                  {event.status === 'Draft' && <>
+                    <Link role="menuitem" className="admin-action-item" to={`/admin/events/${event.id}/edit`} onClick={() => setOpenMenuId(null)}>Edit event</Link>
+                    <button role="menuitem" className="admin-action-item is-primary" disabled={action.isPending} onClick={() => { setOpenMenuId(null); run(event.id, 'publish', event.name); }}>Publish</button>
+                    <button role="menuitem" className="admin-action-item is-danger" disabled={action.isPending} onClick={() => { setOpenMenuId(null); run(event.id, 'cancel', event.name); }}>Cancel</button>
+                    <button role="menuitem" className="admin-action-item is-danger" disabled={action.isPending} onClick={() => { setOpenMenuId(null); run(event.id, 'archive', event.name); }}>Archive</button>
+                  </>}
+                  {event.status === 'Published' && <>
+                    <Link role="menuitem" className="admin-action-item" to={`/events/${event.id}`} onClick={() => setOpenMenuId(null)}>View public event</Link>
+                    <button role="menuitem" className="admin-action-item" disabled={action.isPending} onClick={() => { setOpenMenuId(null); run(event.id, 'unpublish', event.name); }}>Return to draft</button>
+                    <button role="menuitem" className="admin-action-item is-danger" disabled={action.isPending} onClick={() => { setOpenMenuId(null); run(event.id, 'cancel', event.name); }}>Cancel</button>
+                  </>}
+                  {event.status === 'Cancelled' && <>
+                    <button role="menuitem" className="admin-action-item is-primary" disabled={action.isPending} onClick={() => { setOpenMenuId(null); run(event.id, 'republish', event.name); }}>Republish</button>
+                    <button role="menuitem" className="admin-action-item" disabled={action.isPending} onClick={() => { setOpenMenuId(null); run(event.id, 'restore', event.name); }}>Restore draft</button>
+                    <button role="menuitem" className="admin-action-item is-danger" disabled={action.isPending} onClick={() => { setOpenMenuId(null); run(event.id, 'archive', event.name, 'Delete'); }}>Delete</button>
+                  </>}
+                  {event.status === 'Ended' && <button role="menuitem" className="admin-action-item is-danger" disabled={action.isPending} onClick={() => { setOpenMenuId(null); run(event.id, 'archive', event.name, 'Delete'); }}>Delete</button>}
+                </div>}
               </div>
             </article>)}
           </div>}
@@ -145,37 +181,37 @@ export function AdminEventFormPage() {
 }
 
 function EventFormPage({ event, onSaved }: { event?: EventDetail; onSaved: () => void }) {
+  const initialLayout = useMemo(() => event ? layoutFromSeats(event.stageShape ?? 'Proscenium', event.seats, event.stageX, event.stageY) : emptySeatLayout(), [event]);
+  const [layout, setLayout] = useState<SeatLayoutDraft>(initialLayout);
   const form = useForm<EventForm>({ resolver: zodResolver(eventSchema), defaultValues: defaults(event) });
-  const seats = useFieldArray({ control: form.control, name: 'seats' });
   const save = useMutation({
     mutationFn: (value: EventForm) => {
-      const input: SaveEventInput = { ...value, startsAt: new Date(value.startsAt).toISOString(), endsAt: new Date(value.endsAt).toISOString(), salesStartAt: new Date(value.salesStartAt).toISOString(), salesEndAt: new Date(value.salesEndAt).toISOString() };
+      const seats = serializeSeatLayout(layout);
+      const input: SaveEventInput = { ...value, stageShape: layout.stageShape, stageX: layout.stageX, stageY: layout.stageY, seats: seats.map(seat => ({ section: seat.section, row: seat.row, number: seat.number, price: seat.price, currency: seat.currency, layoutX: seat.layoutX, layoutY: seat.layoutY })), startsAt: new Date(value.startsAt).toISOString(), endsAt: new Date(value.endsAt).toISOString(), salesStartAt: new Date(value.salesStartAt).toISOString(), salesEndAt: new Date(value.salesEndAt).toISOString() };
       return event ? api.updateEvent(event.id, input) : api.createEvent(input);
     },
     onSuccess: onSaved,
   });
-  const inventoryError = typeof form.formState.errors.seats?.message === 'string' ? form.formState.errors.seats.message : undefined;
-  const sameSeatGroup = (left: EventForm['seats'][number], right: EventForm['seats'][number]) =>
-    left.section.trim().toLowerCase() === right.section.trim().toLowerCase() && left.row.trim().toLowerCase() === right.row.trim().toLowerCase();
-  const addSeat = () => {
-    const current = form.getValues('seats');
-    const template = current.at(-1) ?? emptySeat;
-    const nextNumber = Math.max(0, ...current.filter(seat => sameSeatGroup(seat, template)).map(seat => seat.number)) + 1;
-    seats.append({ ...template, number: nextNumber });
-  };
-  const removeSeat = (removedIndex: number) => {
-    const current = form.getValues('seats');
-    const removed = current[removedIndex];
-    let number = 0;
-    seats.replace(current.filter((_, index) => index !== removedIndex)
-      .map(seat => sameSeatGroup(seat, removed) ? { ...seat, number: ++number } : seat));
+  const inventoryError = layout.seats.length === 0
+    ? 'Add at least one seat before saving.'
+    : layout.seats.some(seat => !seat.row)
+      ? 'Assign every seat to a row before saving.'
+      : undefined;
+  const submit = (value: EventForm) => {
+    const seats = serializeSeatLayout(layout);
+    const validation = eventSchema.safeParse({ ...value, stageShape: layout.stageShape, seats });
+    if (!validation.success) {
+      form.setError('seats', { type: 'validate', message: inventoryError ?? 'Check the seat layout before saving.' });
+      return;
+    }
+    save.mutate(value);
   };
 
   return <section className="admin-page">
     <p className="kicker">BOX OFFICE ADMIN</p><h1>{event ? 'Edit event' : 'Create event'}</h1>
     {event && event.status !== 'Draft'
       ? <p className="error" role="alert">Only draft events can be edited.</p>
-      : <form className="event-form" aria-busy={save.isPending} onSubmit={form.handleSubmit(value => save.mutate(value))}>
+      : <form className="event-form" aria-busy={save.isPending} onSubmit={form.handleSubmit(submit)}>
         <fieldset><legend>Event details</legend><div className="form-grid">
           <Field label="Name" error={form.formState.errors.name?.message}><input {...form.register('name')} /></Field>
           <Field label="Slug" error={form.formState.errors.slug?.message}><input {...form.register('slug')} /></Field>
@@ -192,17 +228,9 @@ function EventFormPage({ event, onSaved }: { event?: EventDetail; onSaved: () =>
           <Field label="Sales start" error={form.formState.errors.salesStartAt?.message}><input type="datetime-local" {...form.register('salesStartAt')} /></Field>
           <Field label="Sales end" error={form.formState.errors.salesEndAt?.message}><input type="datetime-local" {...form.register('salesEndAt')} /></Field>
         </div></fieldset>
-        <fieldset className="seat-editor" aria-invalid={!!inventoryError} aria-describedby={inventoryError ? 'seat-inventory-error' : undefined}><legend>Seat inventory</legend>
-          <div className="section-head"><div><h2>{seats.fields.length} seat{seats.fields.length === 1 ? '' : 's'}</h2><p>Each section, row and number combination must be unique.</p></div><button type="button" className="ghost" onClick={addSeat}>Add seat</button></div>
-          <div className="seat-table-head" aria-hidden="true"><span>Section</span><span>Row</span><span>Number</span><span>Price</span><span>Currency</span><span /></div>
-          {seats.fields.map((seat, index) => <div className="seat-row" key={seat.id}>
-            <Field label="Section" error={form.formState.errors.seats?.[index]?.section?.message}><input {...form.register(`seats.${index}.section`)} /></Field>
-            <Field label="Row" error={form.formState.errors.seats?.[index]?.row?.message}><input {...form.register(`seats.${index}.row`)} /></Field>
-            <Field label="Number" error={form.formState.errors.seats?.[index]?.number?.message}><input type="number" {...form.register(`seats.${index}.number`, { valueAsNumber: true })} /></Field>
-            <Field label="Price" error={form.formState.errors.seats?.[index]?.price?.message}><input type="number" step="0.01" {...form.register(`seats.${index}.price`, { valueAsNumber: true })} /></Field>
-            <Field label="Currency" error={form.formState.errors.seats?.[index]?.currency?.message}><input maxLength={3} {...form.register(`seats.${index}.currency`)} /></Field>
-            <button type="button" className="danger" disabled={seats.fields.length === 1} onClick={() => removeSeat(index)}>Remove</button>
-          </div>)}
+        <fieldset className="seat-editor" aria-invalid={!!inventoryError} aria-describedby={inventoryError ? 'seat-inventory-error' : undefined}><legend>Seat layout</legend>
+          <p>Choose a stage shape, create seat types, then add complete rows by selecting a section, seat type and quantity. Each row is numbered from 1 automatically.</p>
+          <SeatLayoutEditor value={layout} onChange={setLayout} />
           {inventoryError && <p id="seat-inventory-error" className="error" role="alert">{inventoryError}</p>}
         </fieldset>
         {save.isError && <p className="error" role="alert">{save.error.message}</p>}

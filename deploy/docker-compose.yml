@@ -194,6 +194,12 @@ services:
       gateway:
         condition: service_healthy
 
+  tunnel:
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    network_mode: host
+    command: tunnel --no-autoupdate --protocol http2 run --token ${TUNNEL_TOKEN}
+
 volumes:
   postgres-data:
   redis-data:

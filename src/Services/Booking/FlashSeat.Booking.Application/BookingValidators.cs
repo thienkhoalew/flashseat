@@ -16,3 +16,12 @@ public sealed class CreateBookingRequestValidator : AbstractValidator<CreateBook
 {
     public CreateBookingRequestValidator() => RuleFor(x => x.HoldId).NotEmpty();
 }
+
+public sealed class CheckInRequestValidator : AbstractValidator<CheckInRequest>
+{
+    public CheckInRequestValidator()
+    {
+        RuleFor(x => x.EventId).NotEmpty();
+        RuleFor(x => x.TicketCode).NotEmpty();
+    }
+}

@@ -21,6 +21,9 @@ public sealed class EventsDbContext(DbContextOptions<EventsDbContext> options) :
             entity.Property(x => x.VenueName).HasMaxLength(200);
             entity.Property(x => x.Address).HasMaxLength(500);
             entity.Property(x => x.Status).HasConversion<string>().HasMaxLength(20);
+            entity.Property(x => x.StageShape).HasConversion<string>().HasMaxLength(20).HasDefaultValue(StageShape.Proscenium);
+            entity.Property(x => x.StageX).HasPrecision(5, 2);
+            entity.Property(x => x.StageY).HasPrecision(5, 2);
             entity.Property(x => x.DeletedAt);
             entity.HasIndex(x => x.Slug).IsUnique().HasFilter("\"DeletedAt\" IS NULL");
             entity.HasIndex(x => new { x.Status, x.EndsAt });
@@ -35,6 +38,8 @@ public sealed class EventsDbContext(DbContextOptions<EventsDbContext> options) :
             entity.Property(x => x.Row).HasMaxLength(10);
             entity.Property(x => x.Price).HasPrecision(18, 2);
             entity.Property(x => x.Currency).HasMaxLength(3);
+            entity.Property(x => x.LayoutX).HasPrecision(5, 2);
+            entity.Property(x => x.LayoutY).HasPrecision(5, 2);
             entity.HasIndex(x => new { x.EventId, x.Section, x.Row, x.Number }).IsUnique();
         });
     }

@@ -221,7 +221,7 @@ public sealed class BookingService(BookingDbContext db, RedisSeatLock seatLock, 
         await transaction.CommitAsync(cancellationToken);
     }
 
-    public async Task<CheckInAttemptResult> CheckInAsync(Guid operatorId, string ticketCode, CancellationToken cancellationToken)
+    public async Task<CheckInAttemptResult> CheckInAsync(Guid operatorId, Guid eventId, string ticketCode, CancellationToken cancellationToken)
     {
         if (!TicketCodeGenerator.TryParse(ticketCode.Trim(), out var normalized))
             return new(null, CheckInFailure.UnknownTicket);
@@ -238,6 +238,8 @@ public sealed class BookingService(BookingDbContext db, RedisSeatLock seatLock, 
             cancellationToken);
         var ticket = await db.BookingItems.Include(x => x.Booking)
             .SingleAsync(x => x.Id == ticketId.Value, cancellationToken);
+        if (ticket.Booking.EventId != eventId)
+            return new(null, CheckInFailure.EventMismatch);
         if (ticket.Booking.Status != BookingStatus.Confirmed)
             return new(null, CheckInFailure.BookingNotConfirmed);
         if (ticket.CheckInStatus == TicketCheckInStatus.CheckedIn)

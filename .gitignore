@@ -31,3 +31,4 @@ Thumbs.db
 # Containers and tooling
 artifacts/
 *.log
+.superdesign/

@@ -13,6 +13,9 @@ public sealed class EventEntity
         SetDetails(name, slug, description, imageUrl, venueName, address, startsAt, endsAt, salesStartAt, salesEndAt, now);
     }
 
+    public void SetStageShape(StageShape stageShape) => StageShape = stageShape;
+    public void SetStagePosition(decimal? stageX, decimal? stageY) { StageX = stageX; StageY = stageY; }
+
     public Guid Id { get; private set; }
     public string Name { get; private set; } = string.Empty;
     public string Slug { get; private set; } = string.Empty;
@@ -25,6 +28,9 @@ public sealed class EventEntity
     public DateTimeOffset SalesStartAt { get; private set; }
     public DateTimeOffset SalesEndAt { get; private set; }
     public EventStatus Status { get; private set; }
+    public StageShape StageShape { get; private set; } = StageShape.Proscenium;
+    public decimal? StageX { get; private set; }
+    public decimal? StageY { get; private set; }
     public DateTimeOffset CreatedAt { get; private set; }
     public DateTimeOffset UpdatedAt { get; private set; }
     public DateTimeOffset? DeletedAt { get; private set; }

@@ -6,7 +6,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import * as signalR from '@microsoft/signalr';
 import { BrowserQRCodeReader, type IScannerControls } from '@zxing/browser';
-import { ApiError, api, date, money, saveAuth, type Booking, type BookingItem, type CheckInResponse, type Seat } from './api';
+import { ApiError, api, date, money, saveAuth, type Booking, type BookingItem, type CheckInResponse, type EventDetail, type EventItem, type Seat, type StageShape } from './api';
 import { QRCodeSVG } from 'qrcode.react';
 import demoPaymentQr from './assets/demo-payment-qr.svg';
 
@@ -33,9 +33,58 @@ export function HomePage() {
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
   const [now, setNow] = useState(Date.now());
+  const [activeEventIndex, setActiveEventIndex] = useState(0);
+  const heroRef = useRef<HTMLElement>(null);
+  const listingRef = useRef<HTMLElement>(null);
   const query = useQuery({ queryKey: ['events', search, page], queryFn: () => api.events(search, page) });
   const pages = query.data ? Math.max(1, Math.ceil(query.data.totalCount / query.data.pageSize)) : 1;
-  const items = query.data?.items.filter(event => Date.parse(event.endsAt) > now) ?? [];
+  const items = [...(query.data?.items.filter(event => Date.parse(event.endsAt) > now) ?? [])]
+    .sort((left, right) => Date.parse(left.startsAt) - Date.parse(right.startsAt));
+
+  useEffect(() => {
+    setActiveEventIndex(0);
+  }, [search, page]);
+
+  const revealEvents = () => {
+    listingRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+
+  const revealHero = () => {
+    heroRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+
+  useEffect(() => {
+    let lastWheel = 0;
+    const handleWheel = (event: WheelEvent) => {
+      const currentTime = Date.now();
+      if (Math.abs(event.deltaY) < 15) return;
+      if (currentTime - lastWheel < 850) {
+        event.preventDefault();
+        return;
+      }
+      const listing = listingRef.current;
+      if (!listing) return;
+      const listingTop = Math.round(listing.getBoundingClientRect().top + window.scrollY - 87);
+      const currentY = window.scrollY;
+
+      if (currentY < listingTop * 0.5 && event.deltaY > 0) {
+        event.preventDefault();
+        lastWheel = currentTime;
+        revealEvents();
+      } else if (currentY >= listingTop * 0.5 && event.deltaY < 0) {
+        event.preventDefault();
+        lastWheel = currentTime;
+        revealHero();
+      }
+    };
+
+    window.addEventListener('wheel', handleWheel, { passive: false });
+    return () => window.removeEventListener('wheel', handleWheel);
+  }, []);
+
+  const moveEvents = (direction: -1 | 1) => {
+    setActiveEventIndex(current => Math.min(Math.max(current + direction, 0), Math.max(items.length - 1, 0)));
+  };
 
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 1000);
@@ -57,39 +106,63 @@ export function HomePage() {
   }, [query.data?.items, query.refetch]);
 
   return <>
-    <section className="hero">
+    <section className="hero" ref={heroRef} onClick={revealEvents} onWheel={revealEvents}>
       <p className="kicker">LIVE INVENTORY / DIRECT BOOKING</p>
       <h1>Find your next<br />night out.</h1>
       <p>Browse upcoming events, choose exact seats, and keep every ticket in one place.</p>
-      <form className="search" onSubmit={event => event.preventDefault()}>
+      <button type="button" className="hero-reveal" onClick={event => { event.stopPropagation(); revealEvents(); }}>Explore events <span aria-hidden="true">↓</span></button>
+      <span className="sr-only">Click, scroll, or use Explore events to browse the event list.</span>
+    </section>
+
+    <section className="listing-section" aria-labelledby="upcoming-events" ref={listingRef}>
+      <div className="section-head">
+        <div><p className="kicker">BOX OFFICE</p><h2 id="upcoming-events">Upcoming events</h2></div>
+        <div className="feed-heading-tools">
+          <span className="listing-count">{query.data?.totalCount ?? '—'} listed</span>
+          {!query.isLoading && !query.isError && items.length > 0 && <span className="feed-position" aria-live="polite">{String(activeEventIndex + 1).padStart(2, '0')} / {String(items.length).padStart(2, '0')}</span>}
+        </div>
+      </div>
+      <form className="search listing-search" onSubmit={event => event.preventDefault()}>
         <label htmlFor="search">Search the listings</label>
         <input id="search" type="search" placeholder="Event or venue" value={search} onChange={event => { setSearch(event.target.value); setPage(1); }} />
       </form>
-    </section>
-
-    <section className="listing-section" aria-labelledby="upcoming-events">
-      <div className="section-head">
-        <div><p className="kicker">BOX OFFICE</p><h2 id="upcoming-events">Upcoming events</h2></div>
-        <span className="listing-count">{query.data?.totalCount ?? '—'} listed</span>
-      </div>
       {query.isLoading
         ? <div className="event-board"><Skeleton /><Skeleton /><Skeleton /></div>
         : query.isError
           ? <ErrorState message="We couldn't load upcoming events." retry={() => query.refetch()} />
           : items.length === 0
             ? <p className="empty">No events match “{search}”. Try another event or venue.</p>
-            : <div className="event-board">{items.map(event => {
-              const starts = shortDate(event.startsAt);
-              const bookingOpen = salesAreOpen(event.salesStartAt, event.salesEndAt, now);
-              const soldOut = event.availabilityStatus === 'SoldOut';
-              const salesOpeningIn = Date.parse(event.salesStartAt) - now;
-              return <Link className="event-row" aria-label={`View ${event.name}`} to={`/events/${event.id}`} key={event.id}>
-                <time className="date-block" dateTime={event.startsAt}><strong>{starts.day}</strong><span>{starts.month}</span></time>
-                <div className="event-image"><img src={event.imageUrl} alt="" loading="lazy" decoding="async" /></div>
-                <div className="event-copy"><h3>{event.name}</h3><p>{event.venueName}</p></div>
-                <div className="event-action"><span>From</span><strong>{money(event.minPrice, event.currency)}</strong>{soldOut ? <span className="status soldout">Sold out</span> : bookingOpen ? <span className="status published">On sale</span> : salesOpeningIn > 0 ? <span className="sales-countdown" role="timer" aria-label={`Tickets open in ${salesCountdown(salesOpeningIn)}`}>Tickets open in {salesCountdown(salesOpeningIn)}</span> : <span className="status draft">Sales ended</span>}</div>
-              </Link>;
-            })}</div>}
+            : <>
+              <p className="sr-only" id="event-feed-help">Use the previous and next buttons to browse one event at a time.</p>
+              <div className="event-carousel" role="region" aria-label="Upcoming event carousel">
+                <button type="button" className="feed-control feed-control-left" aria-controls="event-feed" aria-label="Previous event" disabled={activeEventIndex === 0} onClick={() => moveEvents(-1)}>←</button>
+                <ul id="event-feed" className="event-feed" aria-label="Upcoming event cards" aria-describedby="event-feed-help">
+                  {items.map((event, index) => {
+                    const starts = shortDate(event.startsAt);
+                    const bookingOpen = salesAreOpen(event.salesStartAt, event.salesEndAt, now);
+                    const soldOut = event.availabilityStatus === 'SoldOut';
+                    const salesOpeningIn = Date.parse(event.salesStartAt) - now;
+                    return <li className={index === activeEventIndex ? 'is-active' : ''} key={event.id}>
+                      <Link className="event-card" aria-label={`View ${event.name}`} aria-current={index === activeEventIndex ? 'true' : undefined} to={`/events/${event.id}`}>
+                        <div className="event-card-media">
+                          <img src={event.imageUrl} alt="" loading="lazy" decoding="async" />
+                          <div className="event-card-wash" aria-hidden="true" />
+                          <time className="event-card-date" dateTime={event.startsAt}><strong>{starts.day}</strong><span>{starts.month}</span></time>
+                          {soldOut ? <span className="status soldout event-card-status">Sold out</span> : bookingOpen ? <span className="status published event-card-status">On sale</span> : salesOpeningIn > 0 ? <span className="sales-countdown event-card-status" role="timer" aria-label={`Tickets open in ${salesCountdown(salesOpeningIn)}`}>Tickets open in {salesCountdown(salesOpeningIn)}</span> : <span className="status draft event-card-status">Sales ended</span>}
+                          <div className="event-card-caption">
+                            <p className="event-card-eyebrow">{date(event.startsAt)}</p>
+                            <h3>{event.name}</h3>
+                            <p>{event.venueName}</p>
+                          </div>
+                        </div>
+                        <div className="event-card-footer"><span>From</span><strong>{money(event.minPrice, event.currency)}</strong><span className="event-card-arrow" aria-hidden="true">↗</span></div>
+                      </Link>
+                    </li>;
+                  })}
+                </ul>
+                <button type="button" className="feed-control feed-control-right" aria-controls="event-feed" aria-label="Next event" disabled={activeEventIndex === items.length - 1} onClick={() => moveEvents(1)}>→</button>
+              </div>
+            </>}
       {!query.isError && query.data && items.length > 0 && <nav className="pagination" aria-label="Event pages">
         <button className="ghost" disabled={page === 1} onClick={() => setPage(value => value - 1)}>Previous</button>
         <span className="mono" aria-live="polite">Page {page} / {pages}</span>
@@ -214,6 +287,56 @@ const groupSeats = (seats: Seat[]) => {
   return sections;
 };
 
+const stageClass = (shape: StageShape) => `visual-stage visual-stage-${shape.toLowerCase()}`;
+
+type SeatMapProps = {
+  event: EventDetail;
+  states: Map<string, string>;
+  selected: string[];
+  onToggle: (seat: Seat) => void;
+};
+
+function SeatMap({ event, states, selected, onToggle }: SeatMapProps) {
+  const hasLayout = event.seats.length > 0 && event.seats.every(seat =>
+    typeof seat.layoutX === 'number' && Number.isFinite(seat.layoutX) &&
+    typeof seat.layoutY === 'number' && Number.isFinite(seat.layoutY));
+  const stageShape = event.stageShape ?? 'Proscenium';
+  const renderSeat = (seat: Seat, visual = false) => {
+    const state = states.get(seat.id) ?? 'Unavailable';
+    const chosen = selected.includes(seat.id);
+    return <button
+      key={seat.id}
+      className={`seat ${visual ? 'visual-seat' : ''} ${state.toLowerCase()} ${chosen ? 'selected' : ''}`}
+      style={visual ? { left: `${seat.layoutX}%`, top: `${seat.layoutY}%` } : undefined}
+      disabled={state !== 'Available'}
+      aria-pressed={chosen}
+      aria-label={`Seat ${seat.row}${seat.number}, ${seat.section}, ${money(seat.price, seat.currency)}, ${chosen ? 'Selected' : state}`}
+      onClick={() => onToggle(seat)}
+    >{seat.number}</button>;
+  };
+
+  return <div className={`seat-map ${hasLayout ? 'seat-map-visual' : ''}`}>
+    {hasLayout
+      ? <div className="visual-seat-canvas" aria-label={`${stageShape} seating layout`}>
+          <div className={stageClass(stageShape)} style={typeof event.stageX === 'number' && typeof event.stageY === 'number' ? { left: `${event.stageX}%`, top: `${event.stageY}%`, transform: 'translate(-50%, -50%)' } : undefined}><span>STAGE</span></div>
+          {event.seats.map(seat => renderSeat(seat, true))}
+        </div>
+      : <>
+          <div className="stage"><span>STAGE</span></div>
+          {[...groupSeats(event.seats)].map(([section, rows]) => <section className="seat-section" key={section}>
+            <div className="seat-section-head"><h2>{section}</h2><span>{money([...rows.values()][0][0].price, [...rows.values()][0][0].currency)}</span></div>
+            {[...rows].map(([row, seats]) => <div className="venue-row" key={row}>
+              <span className="row-label">ROW {row}</span>
+              <div className="seat-row-buttons">{seats.map(seat => renderSeat(seat))}</div>
+            </div>)}
+          </section>)}
+        </>}
+    <ul className="seat-legend" aria-label="Seat status legend">
+      <li><i className="seat-swatch available" />Available</li><li><i className="seat-swatch selected" />Selected</li><li><i className="seat-swatch held" />Held</li><li><i className="seat-swatch booked" />Booked</li>
+    </ul>
+  </div>;
+}
+
 export function SeatPage() {
   const { id = '' } = useParams();
   const nav = useNavigate();
@@ -263,7 +386,6 @@ export function SeatPage() {
   const chosenSeats = event.data.seats.filter(seat => selected.includes(seat.id));
   const total = chosenSeats.reduce((sum, seat) => sum + seat.price, 0);
   const currency = chosenSeats[0]?.currency ?? event.data.seats[0]?.currency ?? 'VND';
-  const sections = groupSeats(event.data.seats);
   const holdError = hold.error instanceof ApiError ? hold.error : null;
   const unavailableSeats = holdError?.status === 409
     ? event.data.seats.filter(seat => holdError.problem.unavailableSeatIds.includes(seat.id)).map(seat => `${seat.section} ${seat.row}${seat.number}`)
@@ -274,30 +396,17 @@ export function SeatPage() {
   return <section className="seat-page">
     <div className="page-heading"><p className="kicker">{soldOut ? 'SOLD OUT' : 'LIVE SEATING'}</p><h1>{event.data.name}</h1><p>{soldOut ? 'All seats are currently unavailable.' : 'Select up to 6 seats. Availability refreshes automatically.'}</p></div>
     <div className="seat-layout">
-      <div className="seat-map">
-        <div className="stage"><span>STAGE</span></div>
-        <ul className="seat-legend" aria-label="Seat status legend">
-          <li><i className="seat-swatch available" />Available</li><li><i className="seat-swatch selected" />Selected</li><li><i className="seat-swatch held" />Held</li><li><i className="seat-swatch booked" />Booked</li>
-        </ul>
-        {[...sections].map(([section, rows]) => <section className="seat-section" key={section}>
-          <div className="seat-section-head"><h2>{section}</h2><span>{money([...rows.values()][0][0].price, [...rows.values()][0][0].currency)}</span></div>
-          {[...rows].map(([row, seats]) => <div className="venue-row" key={row}>
-            <span className="row-label">ROW {row}</span>
-            <div className="seat-row-buttons">{seats.map(seat => {
-              const state = states.get(seat.id) ?? 'Unavailable';
-              const chosen = selected.includes(seat.id);
-              return <button
-                key={seat.id}
-                className={`seat ${state.toLowerCase()} ${chosen ? 'selected' : ''}`}
-                disabled={state !== 'Available'}
-                aria-pressed={chosen}
-                aria-label={`Seat ${seat.row}${seat.number}, ${seat.section}, ${money(seat.price, seat.currency)}, ${chosen ? 'Selected' : state}`}
-                onClick={() => { hold.reset(); setSelected(items => chosen ? items.filter(value => value !== seat.id) : items.length < 6 ? [...items, seat.id] : items); }}
-              >{seat.number}</button>;
-            })}</div>
-          </div>)}
-        </section>)}
-      </div>
+      <SeatMap
+        event={event.data}
+        states={states}
+        selected={selected}
+        onToggle={seat => {
+          hold.reset();
+          setSelected(items => items.includes(seat.id)
+            ? items.filter(value => value !== seat.id)
+            : items.length < 6 ? [...items, seat.id] : items);
+        }}
+      />
       <aside className="summary" aria-live="polite">
         <p className="kicker">YOUR ORDER</p><h2>{selected.length ? `${selected.length} seat${selected.length === 1 ? '' : 's'}` : 'No seats yet'}</h2>
         {chosenSeats.length > 0
@@ -409,9 +518,10 @@ export function MyBookingsPage() {
         ? <ErrorState message="We couldn't load your tickets." retry={() => query.refetch()} />
         : query.data?.length === 0
           ? <div className="empty"><p>You don't have any tickets yet.</p><Link className="button" to="/">Browse events</Link></div>
-          : <div className="tickets">{query.data?.map(booking => <article className="ticket" key={booking.id}>
+          : <div className="tickets">{query.data?.map(booking => <article className="ticket ticket-summary" key={booking.id}>
+            {booking.event?.imageUrl && <img className="ticket-event-image" src={booking.event.imageUrl} alt="" />}
+            <div className="ticket-image-overlay" aria-hidden="true" />
             <div className="ticket-main">
-              {booking.event?.imageUrl && <img className="ticket-event-image" src={booking.event.imageUrl} alt="" />}
               <span className={`status ${booking.status.toLowerCase()}`}>{bookingStatus(booking.status)}</span>
               <h2>{booking.event?.name ?? 'Event details unavailable'}</h2>
               <p className="ticket-number">{booking.bookingNumber}</p>
@@ -454,21 +564,33 @@ export function BookingDetailPage() {
 }
 
 export function CheckInPage() {
+  const [eventId, setEventId] = useState('');
   const [code, setCode] = useState('');
   const [scanning, setScanning] = useState(false);
-  const [scannerMessage, setScannerMessage] = useState('Camera scanner is off.');
+  const [scannerMessage, setScannerMessage] = useState('Select an event before starting the camera.');
   const videoRef = useRef<HTMLVideoElement>(null);
   const controlsRef = useRef<IScannerControls>();
-  const checkIn = useMutation({ mutationFn: (value: string) => api.checkIn(value) });
+  const events = useQuery({ queryKey: ['check-in-events'], queryFn: () => api.events('', 1, 100) });
+  const checkIn = useMutation({ mutationFn: ({ eventId: selectedEventId, code: ticketCode }: { eventId: string; code: string }) => api.checkIn(selectedEventId, ticketCode) });
+  const selectedEvent = events.data?.items.find(event => event.id === eventId);
   const duplicateResponse = checkIn.error instanceof ApiError && checkIn.error.status === 409 &&
     typeof checkIn.error.problem.body === 'object' && checkIn.error.problem.body !== null &&
     'ticketCode' in checkIn.error.problem.body
     ? checkIn.error.problem.body as CheckInResponse
     : null;
+  const mismatch = checkIn.error instanceof ApiError && checkIn.error.problem.code === 'ticket_event_mismatch';
   useEffect(() => () => { controlsRef.current?.stop(); }, []);
   useEffect(() => {
-    if (!scanning || !videoRef.current) return;
+    controlsRef.current?.stop();
+    setScanning(false);
+    setCode('');
+    checkIn.reset();
+    setScannerMessage(eventId ? 'Camera scanner is off.' : 'Select an event before starting the camera.');
+  }, [eventId]);
+  useEffect(() => {
+    if (!scanning || !eventId || !videoRef.current) return;
     let active = true;
+    const selectedId = eventId;
     const reader = new BrowserQRCodeReader();
     setScannerMessage('Point the camera at a ticket QR code.');
     void reader.decodeFromConstraints({
@@ -478,14 +600,14 @@ export function CheckInPage() {
         height: { ideal: 720 },
       },
     }, videoRef.current, (result) => {
-      if (!active || !result || checkIn.isPending) return;
+      if (!active || !result || checkIn.isPending || !selectedId) return;
       const value = result.getText().trim();
       if (!value) return;
       setCode(value);
       setScannerMessage('QR code read. Checking ticket…');
       setScanning(false);
       controlsRef.current?.stop();
-      checkIn.mutate(value);
+      checkIn.mutate({ eventId: selectedId, code: value });
     }).then(controls => {
       if (active) controlsRef.current = controls;
       else controls.stop();
@@ -500,17 +622,22 @@ export function CheckInPage() {
       active = false;
       controlsRef.current?.stop();
     };
-  }, [scanning, checkIn.isPending]);
-  const submit = (event: React.FormEvent) => { event.preventDefault(); if (code.trim()) checkIn.mutate(code.trim()); };
+  }, [scanning, eventId, checkIn.isPending]);
+  const submit = (event: React.FormEvent) => { event.preventDefault(); if (eventId && code.trim()) checkIn.mutate({ eventId, code: code.trim() }); };
   return <section className="admin-page checkin-page">
-    <div className="page-heading"><p className="kicker">VENUE OPERATIONS</p><h1>Check in tickets.</h1><p>Scan each ticket once, or enter its code manually.</p></div>
+    <div className="page-heading"><p className="kicker">VENUE OPERATIONS</p><h1>Check in tickets.</h1><p>Select the event you are operating before scanning or entering tickets.</p></div>
+    <div className="checkin-event-selector">
+      <label htmlFor="check-in-event">Event</label>
+      {events.isLoading ? <p role="status">Loading events…</p> : events.isError ? <p className="error" role="alert">We couldn't load events. Try again.</p> : events.data?.items.length === 0 ? <p className="empty">No current events are available.</p> : <select id="check-in-event" value={eventId} disabled={checkIn.isPending} onChange={event => setEventId(event.target.value)}><option value="">Select an event</option>{events.data?.items.map((event: EventItem) => <option key={event.id} value={event.id}>{event.name} · {event.venueName} · {date(event.startsAt)}</option>)}</select>}
+      {selectedEvent && <p className="selected-event" role="status"><strong>{selectedEvent.name}</strong> · {selectedEvent.venueName} · {date(selectedEvent.startsAt)}</p>}
+    </div>
     <div className="checkin-layout">
       <div className="scanner-panel">
         {scanning ? <video ref={videoRef} className="scanner-video" aria-label="Ticket QR scanner" autoPlay muted playsInline /> : <div className="scanner-placeholder">{scannerMessage}</div>}
         <p className="scanner-status" role="status">{scannerMessage}</p>
-        <button className="ghost" onClick={() => { setScannerMessage('Starting camera…'); setScanning(value => !value); }}>{scanning ? 'Stop camera' : 'Scan with camera'}</button>
+        <button type="button" className="ghost" disabled={!eventId} onClick={() => { setScannerMessage('Starting camera…'); setScanning(value => !value); }}>{scanning ? 'Stop camera' : 'Scan with camera'}</button>
       </div>
-      <div className="checkin-form-panel"><form onSubmit={submit}><label htmlFor="ticket-code">Ticket code<input id="ticket-code" value={code} onChange={event => setCode(event.target.value)} placeholder="FS1:..." autoComplete="off" /></label><button className="button" disabled={!code.trim() || checkIn.isPending}>{checkIn.isPending ? 'Checking…' : 'Check in ticket'}</button></form>{checkIn.isError && <div className="error" role="alert"><p>{duplicateResponse ? 'This ticket was already checked in.' : checkIn.error.message}</p>{duplicateResponse && <p>{duplicateResponse.event?.name} · {duplicateResponse.ticket.section} {duplicateResponse.ticket.row}{duplicateResponse.ticket.number}{duplicateResponse.checkedInAt && ` · ${date(duplicateResponse.checkedInAt)}`}</p>}</div>}{checkIn.data && <div className="checkin-result" role="status"><strong>Ticket checked in.</strong><p>{checkIn.data.event?.name}</p><p>{checkIn.data.ticket.section} · {checkIn.data.ticket.row}{checkIn.data.ticket.number}</p><p>{checkIn.data.checkedInAt && date(checkIn.data.checkedInAt)}</p></div>}</div>
+      <div className="checkin-form-panel"><form onSubmit={submit}><label htmlFor="ticket-code">Ticket code<input id="ticket-code" value={code} onChange={event => setCode(event.target.value)} placeholder="FS1:..." autoComplete="off" disabled={!eventId} /></label><button className="button" disabled={!eventId || !code.trim() || checkIn.isPending}>{checkIn.isPending ? 'Checking…' : 'Check in ticket'}</button></form>{checkIn.isError && <div className="error" role="alert"><p>{mismatch ? 'This ticket belongs to another event.' : duplicateResponse ? 'This ticket was already checked in.' : checkIn.error.message}</p>{duplicateResponse && <p>{duplicateResponse.event?.name} · {duplicateResponse.ticket.section} {duplicateResponse.ticket.row}{duplicateResponse.ticket.number}{duplicateResponse.checkedInAt && ` · ${date(duplicateResponse.checkedInAt)}`}</p>}</div>}{checkIn.data && <div className="checkin-result" role="status"><strong>Ticket checked in.</strong><p>{checkIn.data.event?.name}</p><p>{checkIn.data.ticket.section} · {checkIn.data.ticket.row}{checkIn.data.ticket.number}</p><p>{checkIn.data.checkedInAt && date(checkIn.data.checkedInAt)}</p></div>}</div>
     </div>
   </section>;
 }

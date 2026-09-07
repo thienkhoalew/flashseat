@@ -56,12 +56,15 @@ app.MapPost("/api/bookings", async (CreateBookingRequest request, ClaimsPrincipa
 }).RequireAuthorization();
 app.MapGet("/api/bookings/me", async (ClaimsPrincipal user, IBookingService service, CancellationToken ct) => Results.Ok(await service.GetBookingsAsync(UserId(user), ct))).RequireAuthorization();
 app.MapGet("/api/bookings/{bookingId:guid}", async (Guid bookingId, ClaimsPrincipal user, IBookingService service, CancellationToken ct) => await service.GetBookingAsync(UserId(user), user.IsInRole("Admin"), bookingId, ct) is { } result ? Results.Ok(result) : Results.NotFound()).RequireAuthorization();
-app.MapPost("/api/admin/check-ins", async (CheckInRequest request, ClaimsPrincipal user, IBookingService service, CancellationToken ct) =>
+app.MapPost("/api/admin/check-ins", async (CheckInRequest request, ClaimsPrincipal user, IValidator<CheckInRequest> validator, IBookingService service, CancellationToken ct) =>
 {
-    var result = await service.CheckInAsync(UserId(user), request.TicketCode, ct);
+    var validation = await validator.ValidateAsync(request, ct);
+    if (!validation.IsValid) return Results.ValidationProblem(validation.ToDictionary());
+    var result = await service.CheckInAsync(UserId(user), request.EventId, request.TicketCode, ct);
     return result.Failure switch
     {
         CheckInFailure.UnknownTicket => Results.NotFound(new { title = "Ticket not found." }),
+        CheckInFailure.EventMismatch => Results.Conflict(new { code = "ticket_event_mismatch", title = "This ticket belongs to another event.", status = 409 }),
         CheckInFailure.BookingNotConfirmed => Results.Conflict(new { title = "Booking is not confirmed." }),
         CheckInFailure.AlreadyCheckedIn => Results.Conflict(result.Response),
         _ => Results.Ok(result.Response)

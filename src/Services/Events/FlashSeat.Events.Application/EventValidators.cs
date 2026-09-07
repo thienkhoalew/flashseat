@@ -1,3 +1,4 @@
+using FlashSeat.Events.Domain;
 using FluentValidation;
 
 namespace FlashSeat.Events.Application;
@@ -11,6 +12,8 @@ public sealed class SeatInputValidator : AbstractValidator<SeatInput>
         RuleFor(x => x.Number).GreaterThan(0);
         RuleFor(x => x.Price).GreaterThan(0);
         RuleFor(x => x.Currency).Length(3).Matches("^[A-Z]{3}$");
+        RuleFor(x => x.LayoutX).InclusiveBetween(0, 100).When(x => x.LayoutX.HasValue);
+        RuleFor(x => x.LayoutY).InclusiveBetween(0, 100).When(x => x.LayoutY.HasValue);
     }
 }
 
@@ -27,9 +30,16 @@ public sealed class SaveEventRequestValidator : AbstractValidator<SaveEventReque
         RuleFor(x => x.EndsAt).GreaterThan(x => x.StartsAt);
         RuleFor(x => x.SalesEndAt).GreaterThan(x => x.SalesStartAt);
         RuleFor(x => x.StartsAt).GreaterThanOrEqualTo(x => x.SalesEndAt);
+        RuleFor(x => x.StageShape).Must(BeKnownStageShape).WithMessage("Stage shape is not supported.");
+        RuleFor(x => x.StageX).InclusiveBetween(0, 100).When(x => x.StageX.HasValue);
+        RuleFor(x => x.StageY).InclusiveBetween(0, 100).When(x => x.StageY.HasValue);
+        RuleFor(x => x).Must(x => x.StageX.HasValue == x.StageY.HasValue).WithMessage("Stage position must include both coordinates.");
         RuleFor(x => x.Seats).NotEmpty().Must(HaveUniqueSeatLabels).WithMessage("Seat labels must be unique.");
         RuleForEach(x => x.Seats).SetValidator(new SeatInputValidator());
     }
+
+    private static bool BeKnownStageShape(string value) =>
+        Enum.GetNames<StageShape>().Any(name => string.Equals(name, value, StringComparison.OrdinalIgnoreCase));
 
     private static bool BeHttpsUrl(string value) =>
         Uri.TryCreate(value, UriKind.Absolute, out var uri) && uri.Scheme == Uri.UriSchemeHttps;

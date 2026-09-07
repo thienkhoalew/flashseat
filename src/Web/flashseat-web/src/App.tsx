@@ -13,8 +13,21 @@ function Layout() {
   const nav = useNavigate();
   const qc = useQueryClient();
   const [authenticated, setAuthenticated] = useState(isAuthenticated());
+  const [theme, setTheme] = useState<'dark' | 'light'>(() => {
+    const saved = localStorage.getItem('flashseat-theme');
+    return saved === 'light' ? 'light' : 'dark';
+  });
   const user = useCurrentUser();
   const navClass = ({ isActive }: { isActive: boolean }) => isActive ? 'active' : undefined;
+
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme);
+    localStorage.setItem('flashseat-theme', theme);
+  }, [theme]);
+
+  const toggleTheme = () => {
+    setTheme(current => current === 'dark' ? 'light' : 'dark');
+  };
 
   useEffect(() => {
     const update = () => {
@@ -29,19 +42,37 @@ function Layout() {
 
   return <>
     <a className="skip-link" href="#main-content">Skip to content</a>
-    <header>
-      <Link className="brand" to="/" aria-label="FlashSeat home"><span>FS</span><b>FlashSeat</b></Link>
-      <nav aria-label="Main navigation">
+    <header className="site-header">
+      <div className="site-header-inner">
+        <Link className="brand" to="/" aria-label="FlashSeat home">
+          <span>FS</span>
+          <b>FlashSeat</b>
+        </Link>
+        <nav aria-label="Main navigation">
         <NavLink className={navClass} to="/" end>Events</NavLink>
         {user.data && <NavLink className={navClass} to="/bookings">My tickets</NavLink>}
         {user.data?.role === 'Admin' && <><NavLink className={navClass} to="/admin/events">Admin</NavLink><NavLink className={navClass} to="/admin/check-in">Check in</NavLink></>}
         {authenticated
           ? <button className="ghost" onClick={() => { logout(); qc.removeQueries({ queryKey: ['current-user'] }); nav('/login'); }}>Sign out</button>
           : <NavLink className={({ isActive }) => `button small${isActive ? ' active' : ''}`} to="/login">Sign in</NavLink>}
-      </nav>
+        <button
+          className="theme-toggle"
+          onClick={toggleTheme}
+          aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
+          title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
+          aria-pressed={theme === 'light'}
+        >
+          <span className={`theme-icon ${theme === 'dark' ? 'theme-icon-sun' : 'theme-icon-moon'}`} aria-hidden="true" />
+          <span className="sr-only">{theme === 'dark' ? 'Light' : 'Dark'} mode</span>
+        </button>
+        </nav>
+      </div>
     </header>
     <main id="main-content"><Outlet /></main>
-    <footer><strong>FlashSeat</strong><span>Tickets, seats, done.</span></footer>
+    <footer>
+      <strong>FlashSeat</strong>
+      <span>Tickets, seats, done.</span>
+    </footer>
   </>;
 }
 
