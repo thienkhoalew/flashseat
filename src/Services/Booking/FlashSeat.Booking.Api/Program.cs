@@ -4,8 +4,8 @@ using FlashSeat.Booking.Application;
 using FlashSeat.Booking.Infrastructure;
 using FlashSeat.Observability;
 using FluentValidation;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.SignalR;
+using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.AddFlashSeatDefaults();

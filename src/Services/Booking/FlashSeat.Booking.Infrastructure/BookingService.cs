@@ -1,8 +1,8 @@
-using FlashSeat.Booking.Application;
-using FlashSeat.Booking.Domain;
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
+using FlashSeat.Booking.Application;
+using FlashSeat.Booking.Domain;
 using Microsoft.EntityFrameworkCore;
 
 namespace FlashSeat.Booking.Infrastructure;

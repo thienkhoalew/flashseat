@@ -33,7 +33,8 @@ public sealed class SaveEventRequestValidator : AbstractValidator<SaveEventReque
         RuleFor(x => x.StageShape).Must(BeKnownStageShape).WithMessage("Stage shape is not supported.");
         RuleFor(x => x.StageX).InclusiveBetween(0, 100).When(x => x.StageX.HasValue);
         RuleFor(x => x.StageY).InclusiveBetween(0, 100).When(x => x.StageY.HasValue);
-        RuleFor(x => x).Must(x => x.StageX.HasValue == x.StageY.HasValue).WithMessage("Stage position must include both coordinates.");
+        RuleFor(x => x.StageX).Must((request, stageX) => stageX.HasValue == request.StageY.HasValue).WithMessage("Stage position must include both coordinates.");
+        RuleFor(x => x.StageY).Must((request, stageY) => stageY.HasValue == request.StageX.HasValue).WithMessage("Stage position must include both coordinates.");
         RuleFor(x => x.Seats).NotEmpty().Must(HaveUniqueSeatLabels).WithMessage("Seat labels must be unique.");
         RuleForEach(x => x.Seats).SetValidator(new SeatInputValidator());
     }

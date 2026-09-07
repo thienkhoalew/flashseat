@@ -1,11 +1,11 @@
+using System.Net;
+using System.Text;
+using System.Text.Json;
 using FlashSeat.Booking.Application;
 using FlashSeat.Booking.Domain;
 using FlashSeat.Booking.Infrastructure;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
-using System.Net;
-using System.Text;
-using System.Text.Json;
 using StackExchange.Redis;
 using Testcontainers.PostgreSql;
 using Testcontainers.Redis;

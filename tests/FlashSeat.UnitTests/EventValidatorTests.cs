@@ -42,7 +42,11 @@ public sealed class EventValidatorTests
 
         result.IsValid.Should().BeFalse();
         result.Errors.Select(x => x.PropertyName).Should().Contain([
-            "SalesEndAt", "StartsAt", "Seats[0].Number", "Seats[0].Price", "Seats[0].Currency"
+            "SalesEndAt",
+            "StartsAt",
+            "Seats[0].Number",
+            "Seats[0].Price",
+            "Seats[0].Currency"
         ]);
     }
 
@@ -69,7 +73,9 @@ public sealed class EventValidatorTests
 
         result.IsValid.Should().BeFalse();
         result.Errors.Select(x => x.PropertyName).Should().Contain([
-            "StageShape", "Seats[0].LayoutX", "Seats[0].LayoutY"
+            "StageShape",
+            "Seats[0].LayoutX",
+            "Seats[0].LayoutY"
         ]);
     }
 
