@@ -1,5 +1,5 @@
-using FlashSeat.Booking.Domain;
 using FlashSeat.Booking.Application;
+using FlashSeat.Booking.Domain;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;

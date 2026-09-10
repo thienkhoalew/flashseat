@@ -1,6 +1,6 @@
+using FlashSeat.Booking.Application;
 using FlashSeat.Booking.Domain;
 using FlashSeat.Contracts;
-using FlashSeat.Booking.Application;
 using MassTransit;
 using Microsoft.EntityFrameworkCore;
 

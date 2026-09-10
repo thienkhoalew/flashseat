@@ -1,5 +1,5 @@
-using FluentAssertions;
 using FlashSeat.Payment.Domain;
+using FluentAssertions;
 using Xunit;
 
 namespace FlashSeat.UnitTests;

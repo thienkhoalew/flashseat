@@ -16,7 +16,7 @@ vi.mock('@microsoft/signalr',()=>({HubConnectionBuilder:class{
 }}));
 
 const renderWithQuery=(node:ReactNode,router=true)=>{const queryClient=new QueryClient({defaultOptions:{queries:{retry:false},mutations:{retry:false}}});return render(<QueryClientProvider client={queryClient}>{router?<BrowserRouter>{node}</BrowserRouter>:node}</QueryClientProvider>)};
-afterEach(()=>{cleanup();vi.useRealTimers();vi.restoreAllMocks();sessionStorage.clear();logout();});
+afterEach(()=>{cleanup();vi.useRealTimers();vi.restoreAllMocks();vi.unstubAllEnvs();sessionStorage.clear();logout();});
 
 describe('AuthPage',()=>{
   it('renders English labeled login fields',()=>{
@@ -50,6 +50,7 @@ describe('AuthPage',()=>{
   });
 
   it('renders Google sign in button and logs in on callback',async()=>{
+    vi.stubEnv('VITE_GOOGLE_CLIENT_ID', 'test-google-client-id');
     let gisCallback: ((res: { credential: string }) => void) | null = null;
     const initialize = vi.fn().mockImplementation((config: { callback: (res: { credential: string }) => void }) => {
       gisCallback = config.callback;
