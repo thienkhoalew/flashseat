@@ -18,5 +18,43 @@ public sealed class Payment
     public string? FailureReason { get; private set; }
     public DateTimeOffset CreatedAt { get; private set; }
     public DateTimeOffset? CompletedAt { get; private set; }
-    public void Complete(bool success, DateTimeOffset now) { Status = success ? PaymentStatus.Succeeded : PaymentStatus.Failed; FailureReason = success ? null : "Simulated payment failure"; CompletedAt = now; }
+    public long OrderCode { get; private set; }
+    public string? PaymentLinkId { get; private set; }
+    public string? CheckoutUrl { get; private set; }
+    public string? QrCode { get; private set; }
+    public DateTimeOffset? PaymentLinkExpiresAt { get; private set; }
+    public string? ProviderReference { get; private set; }
+    public string? ProviderStatus { get; private set; }
+    public void SetOrderCode(long orderCode) => OrderCode = orderCode;
+    public void SetPayOSLink(string paymentLinkId, string checkoutUrl, string? qrCode, DateTimeOffset? expiresAt, string? providerStatus = null)
+    { PaymentLinkId = paymentLinkId; CheckoutUrl = checkoutUrl; QrCode = qrCode; PaymentLinkExpiresAt = expiresAt; ProviderStatus = providerStatus; }
+    public void SetFailureReason(string reason) => FailureReason = reason;
+    public void MarkExpired(DateTimeOffset now)
+    {
+        if (Status != PaymentStatus.Pending) return;
+        Status = PaymentStatus.Failed;
+        FailureReason = "Payment link expired before payment was completed.";
+        ProviderStatus = "EXPIRED";
+        CompletedAt = now;
+    }
+    public void SetProviderReference(string reference) => ProviderReference = reference;
+    public void SetProviderStatus(string status) => ProviderStatus = status;
+    public bool RecordLatePayment(DateTimeOffset now, string? providerReference)
+    {
+        if (Status == PaymentStatus.Succeeded || ProviderStatus == "LATE_PAYMENT") return false;
+        if (Status == PaymentStatus.Pending) MarkExpired(now);
+        if (Status != PaymentStatus.Failed || ProviderStatus != "EXPIRED") return false;
+        FailureReason = "Payment arrived after the payment window expired; manual refund review is required.";
+        ProviderStatus = "LATE_PAYMENT";
+        if (!string.IsNullOrWhiteSpace(providerReference)) ProviderReference = providerReference;
+        return true;
+    }
+    public bool TryComplete(bool success, DateTimeOffset now, string? failureReason = null)
+    {
+        if (Status != PaymentStatus.Pending) return false;
+        Status = success ? PaymentStatus.Succeeded : PaymentStatus.Failed;
+        FailureReason = success ? null : failureReason ?? "Payment failed";
+        CompletedAt = now;
+        return true;
+    }
 }

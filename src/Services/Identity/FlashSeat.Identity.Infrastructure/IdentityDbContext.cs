@@ -19,6 +19,9 @@ public sealed class IdentityDbContext(DbContextOptions<IdentityDbContext> option
             entity.Property(x => x.PasswordHash).HasMaxLength(512);
             entity.Property(x => x.FullName).HasMaxLength(100);
             entity.Property(x => x.Role).HasConversion<string>().HasMaxLength(20);
+            entity.Property(x => x.IsEmailVerified).HasDefaultValue(false);
+            entity.Property(x => x.EmailVerificationCode).HasMaxLength(10);
+            entity.Property(x => x.EmailVerificationCodeExpiresAt);
             entity.HasMany(x => x.RefreshTokens).WithOne(x => x.User).HasForeignKey(x => x.UserId);
         });
 

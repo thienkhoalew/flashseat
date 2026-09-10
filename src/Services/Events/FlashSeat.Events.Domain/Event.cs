@@ -80,7 +80,6 @@ public sealed class EventEntity
     {
         EnsureMutable(now);
         if (Status != EventStatus.Published) throw new InvalidOperationException("Only published events can be returned to draft.");
-        if (now >= SalesStartAt) throw new InvalidOperationException("Events cannot be unpublished after sales start.");
         Status = EventStatus.Draft;
         UpdatedAt = now;
     }
@@ -89,7 +88,6 @@ public sealed class EventEntity
     {
         EnsureMutable(now);
         if (Status != EventStatus.Cancelled) throw new InvalidOperationException("Only cancelled events can be restored.");
-        if (now >= SalesStartAt) throw new InvalidOperationException("Events cannot be restored after sales start.");
         Status = EventStatus.Draft;
         UpdatedAt = now;
     }

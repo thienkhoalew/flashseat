@@ -9,6 +9,7 @@
     <ProjectReference Include="..\..\src\Services\Booking\FlashSeat.Booking.Application\FlashSeat.Booking.Application.csproj" />
     <ProjectReference Include="..\..\src\Services\Booking\FlashSeat.Booking.Domain\FlashSeat.Booking.Domain.csproj" />
     <ProjectReference Include="..\..\src\Services\Booking\FlashSeat.Booking.Infrastructure\FlashSeat.Booking.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\src\Services\Payment\FlashSeat.Payment.Domain\FlashSeat.Payment.Domain.csproj" />
     <PackageReference Include="FluentAssertions" />
     <PackageReference Include="Testcontainers.PostgreSql" />
     <PackageReference Include="Testcontainers.Redis" />

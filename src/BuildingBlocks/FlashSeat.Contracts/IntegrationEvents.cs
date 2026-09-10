@@ -56,6 +56,14 @@ public sealed record PaymentFailedV1(
     Guid UserId,
     string Reason) : IIntegrationEvent;
 
+public sealed record ConfirmedTicketItemV1(
+    string Section,
+    string Row,
+    int Number,
+    decimal Price,
+    string Currency,
+    string TicketCode);
+
 public sealed record BookingConfirmedV1(
     Guid MessageId,
     Guid CorrelationId,
@@ -63,7 +71,16 @@ public sealed record BookingConfirmedV1(
     int Version,
     Guid BookingId,
     Guid UserId,
-    string BookingNumber) : IIntegrationEvent;
+    string BookingNumber,
+    string CustomerEmail = "",
+    string CustomerName = "",
+    string EventName = "",
+    string VenueName = "",
+    string Address = "",
+    DateTimeOffset? EventStartsAt = null,
+    decimal TotalAmount = 0,
+    string Currency = "VND",
+    IReadOnlyCollection<ConfirmedTicketItemV1>? Tickets = null) : IIntegrationEvent;
 
 public sealed record BookingCancelledV1(
     Guid MessageId,

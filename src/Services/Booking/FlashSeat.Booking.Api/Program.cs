@@ -12,6 +12,7 @@ builder.AddFlashSeatDefaults();
 builder.Services.AddBookingInfrastructure(builder.Configuration);
 builder.Services.AddValidatorsFromAssemblyContaining<CreateHoldRequestValidator>();
 builder.Services.AddSignalR();
+builder.Services.AddSingleton<ISeatAvailabilityNotifier, SeatAvailabilityNotifier>();
 builder.Services.AddFlashSeatSwagger();
 var app = builder.Build();
 await app.Services.InitializeBookingDatabaseAsync();
@@ -44,15 +45,20 @@ app.MapPost("/api/seat-holds", async (CreateHoldRequest request, ClaimsPrincipal
 app.MapGet("/api/seat-holds/{holdId:guid}", async (Guid holdId, ClaimsPrincipal user, IBookingService service, CancellationToken ct) => await service.GetHoldAsync(UserId(user), holdId, ct) is { } result ? Results.Ok(result) : Results.NotFound()).RequireAuthorization();
 app.MapDelete("/api/seat-holds/{holdId:guid}", async (Guid holdId, ClaimsPrincipal user, IBookingService service, IHubContext<SeatAvailabilityHub> hub, CancellationToken ct) =>
 {
-    var hold = await service.GetHoldAsync(UserId(user), holdId, ct);
-    if (hold is null || !await service.ReleaseHoldAsync(UserId(user), holdId, ct)) return Results.NotFound();
-    await hub.Clients.Group($"event:{hold.EventId:N}").SendAsync("SeatsReleased", new { eventId = hold.EventId, seatIds = hold.Items.Select(x => x.SeatId), status = "Available", timestamp = DateTimeOffset.UtcNow }, ct);
+    var result = await service.ReleaseHoldAsync(UserId(user), holdId, ct);
+    if (result.Failure == ReleaseHoldFailure.NotFound) return Results.NotFound();
+    if (result.Failure == ReleaseHoldFailure.Conflict) return Results.Conflict(new { title = "This checkout cannot release its seats.", code = "hold_not_releasable" });
+    if (result.Failure == ReleaseHoldFailure.LockContention) return Results.Conflict(new { title = "Seat selection is being updated. Try again.", code = "lock_contention" });
+    if (result.EventId is { } eventId && result.SeatIds.Count > 0)
+        await hub.Clients.Group($"event:{eventId:N}").SendAsync("SeatsReleased", new { eventId, seatIds = result.SeatIds, status = "Available", timestamp = DateTimeOffset.UtcNow }, ct);
     return Results.NoContent();
 }).RequireAuthorization();
 app.MapPost("/api/bookings", async (CreateBookingRequest request, ClaimsPrincipal user, IValidator<CreateBookingRequest> validator, IBookingService service, CancellationToken ct) =>
 {
     var validation = await validator.ValidateAsync(request, ct); if (!validation.IsValid) return Results.ValidationProblem(validation.ToDictionary());
-    return await service.CreateBookingAsync(UserId(user), request, ct) is { } result ? Results.Created($"/api/bookings/{result.Id}", result) : Results.Conflict();
+    var email = user.FindFirstValue(ClaimTypes.Email) ?? user.FindFirstValue("email") ?? "";
+    var name = user.FindFirstValue("full_name") ?? user.FindFirstValue(ClaimTypes.GivenName) ?? user.FindFirstValue(ClaimTypes.Name) ?? email;
+    return await service.CreateBookingAsync(UserId(user), request, email, name, ct) is { } result ? Results.Created($"/api/bookings/{result.Id}", result) : Results.Conflict();
 }).RequireAuthorization();
 app.MapGet("/api/bookings/me", async (ClaimsPrincipal user, IBookingService service, CancellationToken ct) => Results.Ok(await service.GetBookingsAsync(UserId(user), ct))).RequireAuthorization();
 app.MapGet("/api/bookings/{bookingId:guid}", async (Guid bookingId, ClaimsPrincipal user, IBookingService service, CancellationToken ct) => await service.GetBookingAsync(UserId(user), user.IsInRole("Admin"), bookingId, ct) is { } result ? Results.Ok(result) : Results.NotFound()).RequireAuthorization();
@@ -82,7 +88,7 @@ app.MapGet("/internal/bookings/{bookingId:guid}", async (Guid bookingId, ClaimsP
 {
     var userId = UserId(user);
     var result = await db.Bookings.AsNoTracking().Where(x => x.Id == bookingId && x.UserId == userId)
-        .Select(x => new { x.Id, x.UserId, x.TotalAmount, x.Currency, Status = x.Status.ToString(), PaymentDueAt = db.Holds.Where(h => h.Id == x.HoldId).Select(h => h.ExpiresAt).Single() })
+        .Select(x => new { x.Id, x.UserId, x.HoldId, x.TotalAmount, x.Currency, Status = x.Status.ToString(), PaymentDueAt = db.Holds.Where(h => h.Id == x.HoldId).Select(h => h.ExpiresAt).Single() })
         .SingleOrDefaultAsync(ct);
     return result is null ? Results.NotFound() : Results.Ok(result);
 }).RequireAuthorization().ExcludeFromDescription();

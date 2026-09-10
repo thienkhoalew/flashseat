@@ -3,6 +3,6 @@
     <ProjectReference Include="..\..\..\BuildingBlocks\FlashSeat.Observability\FlashSeat.Observability.csproj" />
     <ProjectReference Include="..\FlashSeat.Payment.Application\FlashSeat.Payment.Application.csproj" />
     <ProjectReference Include="..\FlashSeat.Payment.Infrastructure\FlashSeat.Payment.Infrastructure.csproj" />
-    <PackageReference Include="Microsoft.AspNetCore.OpenApi" /><PackageReference Include="Swashbuckle.AspNetCore" />
+    <PackageReference Include="Microsoft.AspNetCore.OpenApi" /><PackageReference Include="Swashbuckle.AspNetCore" /><PackageReference Include="Microsoft.EntityFrameworkCore.Design"><PrivateAssets>all</PrivateAssets></PackageReference>
   </ItemGroup>
 </Project>

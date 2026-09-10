@@ -99,28 +99,69 @@ public sealed class BookingService(BookingDbContext db, RedisSeatLock seatLock, 
         return ToHold(hold, inventory, timeProvider.GetUtcNow());
     }
 
-    public async Task<bool> ReleaseHoldAsync(Guid userId, Guid holdId, CancellationToken cancellationToken)
+    public async Task<ReleaseHoldResult> ReleaseHoldAsync(Guid userId, Guid holdId, CancellationToken cancellationToken)
     {
-        await using var lease = await seatLock.AcquireAsync(Guid.Empty, [holdId]);
-        if (lease is null) return false;
+        var holdSnapshot = await db.Holds.AsNoTracking().Include(x => x.Items)
+            .SingleOrDefaultAsync(x => x.Id == holdId && x.UserId == userId, cancellationToken);
+        if (holdSnapshot is null) return new(null, [], ReleaseHoldFailure.NotFound);
+
+        var inventoryIds = holdSnapshot.Items.Select(x => x.SeatInventoryId).ToArray();
+        var seatIds = await db.Inventory.AsNoTracking().Where(x => inventoryIds.Contains(x.Id))
+            .Select(x => x.SeatId).ToListAsync(cancellationToken);
+        await using var lease = await seatLock.AcquireAsync(holdSnapshot.EventId, seatIds);
+        if (lease is null) return new(holdSnapshot.EventId, [], ReleaseHoldFailure.LockContention);
+
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
-        var hold = await db.Holds.SingleOrDefaultAsync(x => x.Id == holdId && x.UserId == userId, cancellationToken);
-        if (hold is null || hold.Status != SeatHoldStatus.Active)
+        var hold = await db.Holds.Include(x => x.Items)
+            .SingleOrDefaultAsync(x => x.Id == holdId && x.UserId == userId, cancellationToken);
+        if (hold is null)
         {
             await transaction.RollbackAsync(cancellationToken);
-            return false;
+            return new(null, [], ReleaseHoldFailure.NotFound);
         }
-        var inventory = await db.Inventory.Where(x => x.HoldId == holdId && x.Status == SeatInventoryStatus.Held && x.BookingId == null)
-            .ToListAsync(cancellationToken);
-        foreach (var seat in inventory) seat.Release(holdId);
-        hold.Release();
+        if (hold.Status is SeatHoldStatus.Released or SeatHoldStatus.Expired)
+        {
+            await transaction.CommitAsync(cancellationToken);
+            return new(hold.EventId, [], null);
+        }
+
+        var booking = await db.Bookings.SingleOrDefaultAsync(x => x.HoldId == holdId, cancellationToken);
+        if (booking?.Status == BookingStatus.Confirmed || await db.Inventory.AnyAsync(
+                x => x.HoldId == holdId && x.Status == SeatInventoryStatus.Booked, cancellationToken))
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            return new(hold.EventId, [], ReleaseHoldFailure.Conflict);
+        }
+        if (hold.Status == SeatHoldStatus.Converted && (booking is null || booking.Status != BookingStatus.PendingPayment))
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            return new(hold.EventId, [], ReleaseHoldFailure.Conflict);
+        }
+        var inventoryQuery = db.Inventory.Where(x => x.HoldId == holdId && x.Status == SeatInventoryStatus.Held);
+        if (booking is not null) inventoryQuery = inventoryQuery.Where(x => x.BookingId == booking.Id);
+        else inventoryQuery = inventoryQuery.Where(x => x.BookingId == null);
+        var inventory = await inventoryQuery.ToListAsync(cancellationToken);
+        if (inventory.Count != hold.Items.Count)
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            return new(hold.EventId, [], ReleaseHoldFailure.Conflict);
+        }
+        if (booking is not null) booking.Cancel();
+        foreach (var seat in inventory)
+            seat.Release(holdId, booking?.Id);
+        if (hold.Status == SeatHoldStatus.Active) hold.Release();
+        else hold.ReleaseAfterCancellation();
+        var releasedSeatIds = inventory.Select(x => x.SeatId).ToArray();
         await inventorySummary.ApplyDeltaAsync(hold.EventId, inventory.Count, -inventory.Count, 0, cancellationToken);
         await db.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
-        return true;
+        return new(hold.EventId, releasedSeatIds, null);
     }
 
-    public async Task<BookingResponse?> CreateBookingAsync(Guid userId, CreateBookingRequest request, CancellationToken cancellationToken)
+    public Task<BookingResponse?> CreateBookingAsync(Guid userId, CreateBookingRequest request, CancellationToken cancellationToken)
+        => CreateBookingAsync(userId, request, "", "", cancellationToken);
+
+    public async Task<BookingResponse?> CreateBookingAsync(Guid userId, CreateBookingRequest request, string customerEmail, string customerName, CancellationToken cancellationToken = default)
     {
         var existingEntity = await db.Bookings.AsNoTracking().Include(x => x.Items)
             .SingleOrDefaultAsync(x => x.HoldId == request.HoldId && x.UserId == userId, cancellationToken);
@@ -155,6 +196,7 @@ public sealed class BookingService(BookingDbContext db, RedisSeatLock seatLock, 
         }
         var entity = new global::FlashSeat.Booking.Domain.Booking(Guid.NewGuid(), $"FS-{now:yyyyMMdd}-{Guid.NewGuid().ToString("N")[..8].ToUpperInvariant()}",
             userId, hold.EventId, hold.Id, inventory.Sum(x => x.Price), inventory[0].Currency, now);
+        entity.SetCustomerInfo(customerEmail, customerName);
         entity.SetEventSnapshot(new EventSnapshot(eventMetadata.Name, eventMetadata.Slug, eventMetadata.Description,
             eventMetadata.ImageUrl, eventMetadata.VenueName, eventMetadata.Address, eventMetadata.StartsAt,
             eventMetadata.EndsAt, eventMetadata.Status));
@@ -181,14 +223,15 @@ public sealed class BookingService(BookingDbContext db, RedisSeatLock seatLock, 
     public async Task<IReadOnlyCollection<BookingResponse>> GetBookingsAsync(Guid userId, CancellationToken cancellationToken)
     {
         var bookings = await db.Bookings.AsNoTracking().Include(x => x.Items)
-            .Where(x => x.UserId == userId).OrderByDescending(x => x.CreatedAt).ToListAsync(cancellationToken);
+            .Where(x => x.UserId == userId && x.Status == BookingStatus.Confirmed)
+            .OrderByDescending(x => x.CreatedAt).ToListAsync(cancellationToken);
         return bookings.Select(ToBooking).ToList();
     }
 
     public async Task ImportInventoryAsync(InventoryImportRequest request, CancellationToken cancellationToken)
     {
-        var existing = await db.Inventory.Where(x => x.EventId == request.EventId).Select(x => x.SeatId).ToListAsync(cancellationToken);
-        foreach (var seat in request.Seats.Where(x => !existing.Contains(x.SeatId)))
+        var existing = (await db.Inventory.Where(x => x.EventId == request.EventId).Select(x => x.SeatId).ToListAsync(cancellationToken)).ToHashSet();
+        foreach (var seat in request.Seats.DistinctBy(x => x.SeatId).Where(x => !existing.Contains(x.SeatId)))
             db.Inventory.Add(new EventSeatInventory(Guid.NewGuid(), request.EventId, seat.SeatId, seat.Section, seat.Row, seat.Number, seat.Price, seat.Currency));
         await db.SaveChangesAsync(cancellationToken);
         await inventorySummary.RebuildAsync(request.EventId, cancellationToken);
@@ -214,7 +257,7 @@ public sealed class BookingService(BookingDbContext db, RedisSeatLock seatLock, 
         }
 
         await db.Inventory.Where(x => x.EventId == request.EventId).ExecuteDeleteAsync(cancellationToken);
-        foreach (var seat in request.Seats)
+        foreach (var seat in request.Seats.DistinctBy(x => x.SeatId))
             db.Inventory.Add(new EventSeatInventory(Guid.NewGuid(), request.EventId, seat.SeatId, seat.Section, seat.Row, seat.Number, seat.Price, seat.Currency));
         await db.SaveChangesAsync(cancellationToken);
         await inventorySummary.RebuildAsync(request.EventId, cancellationToken);
@@ -257,12 +300,12 @@ public sealed class BookingService(BookingDbContext db, RedisSeatLock seatLock, 
             inventory.Sum(x => x.Price), inventory.FirstOrDefault()?.Currency ?? "VND");
     private static BookingResponse ToBooking(global::FlashSeat.Booking.Domain.Booking x) => new(x.Id, x.BookingNumber, x.EventId, x.Status.ToString(), x.TotalAmount, x.Currency, x.CreatedAt, x.ConfirmedAt,
         x.EventSnapshotAvailable ? ToEvent(x) : null,
-        x.Items.OrderBy(i => i.Section).ThenBy(i => i.Row).ThenBy(i => i.Number).Select(ToItem).ToList());
+        x.Items.OrderBy(i => i.Section).ThenBy(i => i.Row).ThenBy(i => i.Number).Select(i => ToItem(i, x.Status == BookingStatus.Confirmed)).ToList());
     private static BookingEventResponse ToEvent(global::FlashSeat.Booking.Domain.Booking x) =>
         new(x.EventId, x.EventName, x.EventSlug, x.EventDescription, x.EventImageUrl, x.EventVenueName, x.EventAddress, x.EventStartsAt, x.EventEndsAt, x.EventStatus);
-    private static BookingItemResponse ToItem(BookingItem i) => new(i.Id, i.SeatId, i.Section, i.Row, i.Number, i.Price, i.Currency, i.TicketCode, i.CheckInStatus.ToString(), i.CheckedInAt, i.CheckedInBy);
+    private static BookingItemResponse ToItem(BookingItem i, bool includeTicketCode) => new(i.Id, i.SeatId, i.Section, i.Row, i.Number, i.Price, i.Currency, includeTicketCode ? i.TicketCode : "", i.CheckInStatus.ToString(), i.CheckedInAt, i.CheckedInBy);
     private static CheckInResponse ToCheckIn(BookingItem item) => new(item.TicketCode, item.CheckInStatus.ToString(), item.CheckedInAt,
-        item.Booking.BookingNumber, item.Booking.EventSnapshotAvailable ? ToEvent(item.Booking) : null, ToItem(item));
+        item.Booking.BookingNumber, item.Booking.EventSnapshotAvailable ? ToEvent(item.Booking) : null, ToItem(item, true));
 }
 
 public sealed class EventsClient(HttpClient client)

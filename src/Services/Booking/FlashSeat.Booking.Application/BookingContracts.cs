@@ -8,10 +8,19 @@ public sealed record InventorySummaryRequest(IReadOnlyCollection<Guid> EventIds)
 public sealed record EventActivityResponse(Guid EventId, bool HasHistoricalActivity, int ActiveHoldCount, int PendingBookingCount);
 public sealed record InventorySeatInput(Guid SeatId, string Section, string Row, int Number, decimal Price, string Currency);
 public sealed record SeatAvailabilityResponse(Guid SeatId, string Status, DateTimeOffset? HoldExpiresAt);
+public interface ISeatAvailabilityNotifier
+{
+    Task NotifyAsync(Guid eventId, IReadOnlyCollection<Guid> seatIds, string status, CancellationToken cancellationToken);
+}
 public sealed record EventInventorySummaryResponse(Guid EventId, int TotalSeatCount, int AvailableSeatCount, int HeldSeatCount, int BookedSeatCount, long InventoryVersion, DateTimeOffset AvailabilityAsOf);
 public sealed record HoldItemResponse(Guid SeatId, string Section, string Row, int Number, decimal Price);
 public sealed record HoldResponse(Guid Id, Guid EventId, string Status, DateTimeOffset ExpiresAt,
     IReadOnlyCollection<HoldItemResponse> Items, decimal TotalAmount, string Currency);
+public enum ReleaseHoldFailure { NotFound, Conflict, LockContention }
+public sealed record ReleaseHoldResult(Guid? EventId, IReadOnlyCollection<Guid> SeatIds, ReleaseHoldFailure? Failure = null)
+{
+    public bool Succeeded => EventId.HasValue && Failure is null;
+}
 public sealed record BookingItemResponse(Guid Id, Guid SeatId, string Section, string Row, int Number, decimal Price,
     string Currency, string TicketCode, string CheckInStatus, DateTimeOffset? CheckedInAt, Guid? CheckedInBy = null);
 public sealed record BookingEventResponse(Guid Id, string Name, string Slug, string Description, string ImageUrl,
@@ -37,8 +46,9 @@ public interface IBookingService
     Task ReplaceInventoryAsync(InventoryReplacementRequest request, CancellationToken cancellationToken);
     Task<HoldAttemptResult> CreateHoldAsync(Guid userId, CreateHoldRequest request, CancellationToken cancellationToken);
     Task<HoldResponse?> GetHoldAsync(Guid userId, Guid holdId, CancellationToken cancellationToken);
-    Task<bool> ReleaseHoldAsync(Guid userId, Guid holdId, CancellationToken cancellationToken);
+    Task<ReleaseHoldResult> ReleaseHoldAsync(Guid userId, Guid holdId, CancellationToken cancellationToken);
     Task<BookingResponse?> CreateBookingAsync(Guid userId, CreateBookingRequest request, CancellationToken cancellationToken);
+    Task<BookingResponse?> CreateBookingAsync(Guid userId, CreateBookingRequest request, string customerEmail, string customerName, CancellationToken cancellationToken = default);
     Task<BookingResponse?> GetBookingAsync(Guid userId, bool isAdmin, Guid bookingId, CancellationToken cancellationToken);
     Task<IReadOnlyCollection<BookingResponse>> GetBookingsAsync(Guid userId, CancellationToken cancellationToken);
     Task<CheckInAttemptResult> CheckInAsync(Guid operatorId, Guid eventId, string ticketCode, CancellationToken cancellationToken);

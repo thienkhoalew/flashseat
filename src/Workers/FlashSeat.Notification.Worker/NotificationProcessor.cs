@@ -5,6 +5,7 @@ namespace FlashSeat.Notification.Worker;
 public sealed partial class NotificationProcessor(
     NotificationBuffer queue,
     IOptions<NotificationWorkerOptions> options,
+    IEmailSender emailSender,
     ILogger<NotificationProcessor> logger) : BackgroundService
 {
     protected override Task ExecuteAsync(CancellationToken stoppingToken) =>
@@ -19,7 +20,20 @@ public sealed partial class NotificationProcessor(
             {
                 try
                 {
-                    await Task.Delay(30, cancellationToken);
+                    if (!string.IsNullOrWhiteSpace(command.ToEmail))
+                    {
+                        await emailSender.SendEmailAsync(
+                            command.ToEmail,
+                            command.ToName ?? "",
+                            command.Subject,
+                            command.Body,
+                            command.IsHtml,
+                            cancellationToken);
+                    }
+                    else
+                    {
+                        await Task.Delay(30, cancellationToken);
+                    }
                     NotificationSent(logger, consumerId, command.MessageId, command.Subject);
                     break;
                 }

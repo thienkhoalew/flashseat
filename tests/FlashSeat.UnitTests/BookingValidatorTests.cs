@@ -20,4 +20,7 @@ public sealed class BookingValidatorTests
     [Fact]
     public void Inventory_release_requires_current_hold_and_booking()
     { var holdId = Guid.NewGuid(); var bookingId = Guid.NewGuid(); var inventory = new EventSeatInventory(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), "Main", "A", 1, 100, "VND"); inventory.Hold(holdId, DateTimeOffset.UtcNow.AddMinutes(5)); inventory.AssignBooking(holdId, bookingId); inventory.Release(Guid.NewGuid(), bookingId); inventory.Status.Should().Be(SeatInventoryStatus.Held); inventory.Release(holdId, bookingId); inventory.Status.Should().Be(SeatInventoryStatus.Available); }
+    [Fact]
+    public void Converted_hold_can_be_released_after_pending_booking_cancellation()
+    { var hold = new SeatHold(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), DateTimeOffset.UtcNow.AddMinutes(5), DateTimeOffset.UtcNow); hold.Convert(); hold.ReleaseAfterCancellation(); hold.Status.Should().Be(SeatHoldStatus.Released); }
 }

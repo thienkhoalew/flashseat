@@ -27,6 +27,23 @@ public sealed class LoginRequestValidator : AbstractValidator<LoginRequest>
     }
 }
 
+public sealed class VerifyEmailRequestValidator : AbstractValidator<VerifyEmailRequest>
+{
+    public VerifyEmailRequestValidator()
+    {
+        RuleFor(x => x.Email).NotEmpty().EmailAddress().MaximumLength(254);
+        RuleFor(x => x.Code).NotEmpty().Length(6).Matches("^[0-9]{6}$").WithMessage("Verification code must be 6 digits.");
+    }
+}
+
+public sealed class ResendVerificationRequestValidator : AbstractValidator<ResendVerificationRequest>
+{
+    public ResendVerificationRequestValidator()
+    {
+        RuleFor(x => x.Email).NotEmpty().EmailAddress().MaximumLength(254);
+    }
+}
+
 public sealed class RefreshRequestValidator : AbstractValidator<RefreshRequest>
 {
     public RefreshRequestValidator() => RuleFor(x => x.RefreshToken).NotEmpty().MaximumLength(512);
@@ -35,4 +52,9 @@ public sealed class RefreshRequestValidator : AbstractValidator<RefreshRequest>
 public sealed class RevokeRequestValidator : AbstractValidator<RevokeRequest>
 {
     public RevokeRequestValidator() => RuleFor(x => x.RefreshToken).NotEmpty().MaximumLength(512);
+}
+
+public sealed class GoogleAuthRequestValidator : AbstractValidator<GoogleAuthRequest>
+{
+    public GoogleAuthRequestValidator() => RuleFor(x => x.IdToken).NotEmpty().MaximumLength(4096);
 }

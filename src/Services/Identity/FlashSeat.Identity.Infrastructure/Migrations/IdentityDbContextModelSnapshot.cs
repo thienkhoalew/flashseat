@@ -36,8 +36,11 @@ sealed partial class IdentityDbContextModelSnapshot : ModelSnapshot
             b.Property<Guid>("Id").ValueGeneratedOnAdd().HasColumnType("uuid");
             b.Property<DateTimeOffset>("CreatedAt").HasColumnType("timestamp with time zone");
             b.Property<string>("Email").IsRequired().HasMaxLength(254).HasColumnType("character varying(254)");
+            b.Property<string>("EmailVerificationCode").HasMaxLength(10).HasColumnType("character varying(10)");
+            b.Property<DateTimeOffset?>("EmailVerificationCodeExpiresAt").HasColumnType("timestamp with time zone");
             b.Property<string>("FullName").IsRequired().HasMaxLength(100).HasColumnType("character varying(100)");
             b.Property<bool>("IsActive").HasColumnType("boolean");
+            b.Property<bool>("IsEmailVerified").ValueGeneratedOnAdd().HasColumnType("boolean").HasDefaultValue(false);
             b.Property<string>("PasswordHash").IsRequired().HasMaxLength(512).HasColumnType("character varying(512)");
             b.Property<UserRole>("Role").HasConversion<string>().HasMaxLength(20).HasColumnType("character varying(20)");
             b.HasKey("Id");

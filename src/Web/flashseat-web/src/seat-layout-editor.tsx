@@ -130,7 +130,7 @@ function initializeRowCoordinates(row: LayoutRow, seats: LayoutSeat[], rowIndex:
   const points = rowSeats.map(pointFor).filter((point): point is Point => !!point);
   const center = points.length ? centroid(points) : defaultRowCenter(rowIndex, rowCount);
   const angle = points.length > 1 ? rowAngle(rowSeats) : 0;
-  const spacing = DEFAULT_ROW_SPACING;
+  const spacing = rowSeats.length > 30 ? 1.85 : rowSeats.length > 20 ? 2.3 : DEFAULT_ROW_SPACING;
   const middle = (rowSeats.length - 1) / 2;
   const next = seats.map(seat => ({ ...seat }));
   rowSeats.forEach((seat, index) => {
@@ -243,8 +243,15 @@ function sectionColor(sections: string[], section: string): string {
   return idx < 0 ? SECTION_COLORS[0] : SECTION_COLORS[idx % SECTION_COLORS.length];
 }
 
-function LayoutSeatMarker({ seat, color, style }: { seat: LayoutSeat; color?: string; style?: React.CSSProperties }) {
-  return <span className="layout-seat" style={{ ...style, background: color, color: color ? '#fff' : undefined, borderColor: color ?? undefined }} aria-label={`${seat.section} seat ${seat.row}${seat.number}`}>
+function LayoutSeatMarker({ seat, color, style, onHover, onLeave }: { seat: LayoutSeat; color?: string; style?: React.CSSProperties; onHover?: (seat: LayoutSeat) => void; onLeave?: () => void }) {
+  return <span
+    className="layout-seat"
+    style={{ ...style, background: color, color: color ? '#fff' : undefined, borderColor: color ?? undefined }}
+    title={`${seat.section} • Row ${seat.row}, #${seat.number} • ${seat.price.toLocaleString()} ${seat.currency}`}
+    aria-label={`${seat.section} seat ${seat.row}${seat.number}`}
+    onMouseEnter={() => onHover?.(seat)}
+    onMouseLeave={onLeave}
+  >
     {seat.number}
   </span>;
 }
@@ -268,7 +275,7 @@ function geometryForRow(row: LayoutRow, seats: LayoutSeat[]): RowGeometry {
   return { center, angle, minX: Math.min(...locals.map(point => point.x), 0), maxX: Math.max(...locals.map(point => point.x), 0), minY: Math.min(...locals.map(point => point.y), 0), maxY: Math.max(...locals.map(point => point.y), 0), local };
 }
 
-function RowGroup({ row, draft, selected, onSelect, sections }: { row: LayoutRow; draft: SeatLayoutDraft; selected: boolean; onSelect: () => void; sections: string[] }) {
+function RowGroup({ row, draft, selected, onSelect, sections, onHoverSeat, onLeaveSeat }: { row: LayoutRow; draft: SeatLayoutDraft; selected: boolean; onSelect: () => void; sections: string[]; onHoverSeat?: (seat: LayoutSeat) => void; onLeaveSeat?: () => void }) {
   const draggable = useDraggable({ id: `row:${row.id}`, data: { type: 'row', rowId: row.id } });
   const geometry = geometryForRow(row, draft.seats);
   const localWidth = geometry.maxX - geometry.minX;
@@ -276,14 +283,15 @@ function RowGroup({ row, draft, selected, onSelect, sections }: { row: LayoutRow
   const width = Math.max(0, localWidth);
   const height = Math.max(0, localHeight);
   const color = sectionColor(sections, row.section);
+  const isNearLeft = geometry.center.x - width / 2 < 14;
   return <div className={`layout-row-group ${selected ? 'is-selected' : ''}`} style={{ left: `${geometry.center.x}%`, top: `${geometry.center.y}%`, width: `calc(${width}% + var(--layout-row-extra))`, height: `calc(${height}% + var(--layout-row-extra))`, transform: `translate(-50%, -50%) rotate(${geometry.angle}deg)` }} onClick={e => { e.stopPropagation(); onSelect(); }}>
-    <span ref={draggable.setNodeRef} className="row-tag" style={{ background: color }} {...draggable.listeners} {...draggable.attributes} aria-label={`Move ${row.section} row ${row.label}`}>{row.section} {row.label}</span>
+    <span ref={draggable.setNodeRef} className={`row-tag ${isNearLeft ? 'is-right' : ''}`} style={{ background: color }} {...draggable.listeners} {...draggable.attributes} aria-label={`Move ${row.section} row ${row.label}`}>{row.section} {row.label}</span>
     <div className="layout-row-local-seats">
       {row.seatIds.map(id => {
         const seat = seatById(draft, id);
         const point = geometry.local.get(id);
         if (!seat || !point) return null;
-        return <LayoutSeatMarker key={id} seat={seat} color={color} style={{ left: `${localWidth === 0 ? 50 : ((point.x - geometry.minX) / localWidth) * 100}%`, top: `${localHeight === 0 ? 50 : ((point.y - geometry.minY) / localHeight) * 100}%` }} />;
+        return <LayoutSeatMarker key={id} seat={seat} color={color} style={{ left: `${localWidth === 0 ? 50 : ((point.x - geometry.minX) / localWidth) * 100}%`, top: `${localHeight === 0 ? 50 : ((point.y - geometry.minY) / localHeight) * 100}%` }} onHover={onHoverSeat} onLeave={onLeaveSeat} />;
       })}
     </div>
   </div>;
@@ -316,17 +324,36 @@ export function appendRowWithSeats(draft: SeatLayoutDraft, section: string, labe
   return renumberLayout({ ...draft, rows: [...draft.rows, row], seats: [...draft.seats, ...rowSeats] });
 }
 
+export function removeRow(draft: SeatLayoutDraft, rowId: string): SeatLayoutDraft {
+  const row = draft.rows.find(r => r.id === rowId);
+  if (!row) return draft;
+  const removedSeatIds = new Set(row.seatIds);
+  const rows = draft.rows.filter(r => r.id !== rowId);
+  const seats = draft.seats.filter(s => !removedSeatIds.has(s.id));
+  const unassignedSeatIds = draft.unassignedSeatIds.filter(id => !removedSeatIds.has(id));
+  return renumberLayout({ ...draft, rows, seats, unassignedSeatIds });
+}
+
 export function SeatLayoutEditor({ value, onChange }: Props) {
   const [activeId, setActiveId] = useState<string>();
   const [activeStageShape, setActiveStageShape] = useState<StageShape>();
   const [newType, setNewType] = useState({ name: '', price: '', currency: 'VND' });
   const [newRow, setNewRow] = useState({ section: '', label: '', seatTypeId: '', quantity: '10' });
   const [selectedRowId, setSelectedRowId] = useState<string>();
+  const [hoveredSeat, setHoveredSeat] = useState<LayoutSeat | null>(null);
+  const selectedRow = useMemo(() => value.rows.find(r => r.id === selectedRowId), [value.rows, selectedRowId]);
+  const maxRowSeats = useMemo(() => Math.max(0, ...value.rows.map(r => r.seatIds.length)), [value.rows]);
+  const isDense = value.seats.length > 150 || maxRowSeats > 22;
+  const isUltraDense = value.seats.length > 600 || maxRowSeats > 34;
   const canvasRef = useRef<HTMLDivElement | null>(null);
   const canvasDrop = useDroppable({ id: 'stage-canvas', data: { type: 'stage-canvas' } });
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
   const sections = useMemo(() => [...new Set(value.rows.map(row => row.section))], [value.rows]);
   const update = (next: SeatLayoutDraft) => onChange(renumberLayout(next));
+  const handleDeleteRow = useCallback((rowId: string) => {
+    update(removeRow(value, rowId));
+    if (selectedRowId === rowId) setSelectedRowId(undefined);
+  }, [value, selectedRowId]);
   const handleRotate = useCallback((degrees: number) => {
     if (!selectedRowId) return;
     onChange(renumberLayout(rotateRow(value, selectedRowId, degrees)));
@@ -350,11 +377,16 @@ export function SeatLayoutEditor({ value, onChange }: Props) {
       if (movement[e.key]) { e.preventDefault(); handleMove(movement[e.key]); return; }
       if (e.key === 'r' || e.key === 'R') { e.preventDefault(); handleRotate(e.shiftKey ? -15 : 15); }
       if (e.key === '0') { e.preventDefault(); const row = value.rows.find(r => r.id === selectedRowId); if (row) handleRotate(-rowAngle(positionedSeats(row, value.seats))); }
+      if (e.key === 'Delete' || e.key === 'Backspace') {
+        e.preventDefault();
+        handleDeleteRow(selectedRowId);
+        return;
+      }
       if (e.key === 'Escape') setSelectedRowId(undefined);
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [selectedRowId, handleRotate, value]);
+  }, [selectedRowId, handleRotate, handleMove, handleDeleteRow, value]);
   const addType = () => {
     if (!newType.name.trim()) return;
     const type = { id: makeId('type'), name: newType.name.trim(), price: Number(newType.price) || 0, currency: newType.currency.toUpperCase() };
@@ -421,11 +453,81 @@ export function SeatLayoutEditor({ value, onChange }: Props) {
         <h3>Seat types</h3><div className="layout-inline-form"><input aria-label="Seat type name" value={newType.name} onChange={event => setNewType(current => ({ ...current, name: event.target.value }))} placeholder="VIP" /><input aria-label="Seat type price" type="number" value={newType.price} onChange={event => setNewType(current => ({ ...current, price: event.target.value }))} /><button type="button" className="ghost" onClick={addType}>Add type</button></div>
         {value.seatTypes.length === 0 ? <p className="layout-help">No seat types yet. Create a seat type above to start adding rows.</p> : null}
         {value.seatTypes.map(type => <div className="layout-palette-item" key={type.id}><span><strong>{type.name}</strong><small>{type.price} {type.currency}</small></span><button type="button" className="ghost danger-text" aria-label={`Remove seat type ${type.name}`} onClick={() => removeType(type.id)}>✕</button></div>)}
-        <h3>Rows</h3><div className="layout-row-form"><input aria-label="Row section" value={newRow.section} onChange={event => setNewRow(current => ({ ...current, section: event.target.value }))} placeholder={sections[0] ?? 'Main'} /><input aria-label="Row label" value={newRow.label} onChange={event => setNewRow(current => ({ ...current, label: event.target.value }))} placeholder="A" /><select aria-label="Row seat type" value={newRow.seatTypeId || value.seatTypes[0]?.id || ''} onChange={event => setNewRow(current => ({ ...current, seatTypeId: event.target.value }))} disabled={value.seatTypes.length === 0}><option value="" disabled>Select seat type</option>{value.seatTypes.map(type => <option key={type.id} value={type.id}>{type.name}</option>)}</select><input aria-label="Row seat quantity" type="number" min="1" max="500" value={newRow.quantity} onChange={event => setNewRow(current => ({ ...current, quantity: event.target.value }))} /><button type="button" className="ghost" onClick={addRow} disabled={value.seatTypes.length === 0}>Add row</button></div>
-        <p className="layout-help">Choose a section, row, seat type and quantity, then add the complete row. Each row starts at seat 1. Click a row to select it. <kbd>↑</kbd><kbd>↓</kbd><kbd>←</kbd><kbd>→</kbd> move 1%; hold <kbd>Shift</kbd> for 5%. <kbd>R</kbd> rotate, <kbd>Shift+R</kbd> reverse, <kbd>0</kbd> reset, <kbd>Esc</kbd> deselect.</p>
+        <h3>Rows</h3>
+        {selectedRow ? (
+          <div className="layout-selected-row-banner">
+            <span>Selected: <strong>{selectedRow.section} - Row {selectedRow.label}</strong> ({selectedRow.seatIds.length} seats)</span>
+            <div className="layout-selected-row-actions">
+              <button type="button" className="ghost danger-text" aria-label={`Delete row ${selectedRow.section} ${selectedRow.label}`} onClick={() => handleDeleteRow(selectedRow.id)}>Delete row</button>
+              <button type="button" className="ghost" onClick={() => setSelectedRowId(undefined)}>Deselect</button>
+            </div>
+          </div>
+        ) : null}
+        <div className="layout-row-form"><input aria-label="Row section" value={newRow.section} onChange={event => setNewRow(current => ({ ...current, section: event.target.value }))} placeholder={sections[0] ?? 'Main'} /><input aria-label="Row label" value={newRow.label} onChange={event => setNewRow(current => ({ ...current, label: event.target.value }))} placeholder="A" /><select aria-label="Row seat type" value={newRow.seatTypeId || value.seatTypes[0]?.id || ''} onChange={event => setNewRow(current => ({ ...current, seatTypeId: event.target.value }))} disabled={value.seatTypes.length === 0}><option value="" disabled>Select seat type</option>{value.seatTypes.map(type => <option key={type.id} value={type.id}>{type.name}</option>)}</select><input aria-label="Row seat quantity" type="number" min="1" max="500" value={newRow.quantity} onChange={event => setNewRow(current => ({ ...current, quantity: event.target.value }))} /><button type="button" className="ghost" onClick={addRow} disabled={value.seatTypes.length === 0}>Add row</button></div>
+        <p className="layout-help">Choose a section, row, seat type and quantity, then add the complete row. Each row starts at seat 1. Click a row to select it. <kbd>↑</kbd><kbd>↓</kbd><kbd>←</kbd><kbd>→</kbd> move 1%; hold <kbd>Shift</kbd> for 5%. <kbd>R</kbd> rotate, <kbd>Shift+R</kbd> reverse, <kbd>0</kbd> reset, <kbd>Del</kbd> delete row, <kbd>Esc</kbd> deselect.</p>
+        {value.rows.length > 0 && (
+          <div className="layout-rows-list">
+            <h4>Existing rows ({value.rows.length})</h4>
+            {value.rows.map(row => (
+              <div key={row.id} className={`layout-palette-item ${selectedRowId === row.id ? 'is-selected' : ''}`}>
+                <span onClick={() => setSelectedRowId(row.id)} style={{ cursor: 'pointer' }}>
+                  <strong>{row.section} - Row {row.label}</strong>
+                  <small>{row.seatIds.length} seats</small>
+                </span>
+                <button
+                  type="button"
+                  className="ghost danger-text"
+                  aria-label={`Remove row ${row.section} ${row.label}`}
+                  onClick={() => handleDeleteRow(row.id)}
+                >
+                  ✕
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
         {sections.length > 0 && <div className="layout-legend">{sections.map(s => <span key={s} className="layout-legend-item"><span className="layout-legend-swatch" style={{ background: sectionColor(sections, s) }} />{s}</span>)}</div>}
       </aside>
-      <div className="layout-workspace"><div ref={node => { canvasRef.current = node; canvasDrop.setNodeRef(node); }} className={`layout-canvas ${canvasDrop.isOver ? 'is-stage-over' : ''}`} onClick={() => setSelectedRowId(undefined)}><StageDropZone shape={value.stageShape} position={stagePosition(value)} />{value.rows.map(row => <RowGroup key={row.id} row={row} draft={value} sections={sections} selected={selectedRowId === row.id} onSelect={() => setSelectedRowId(row.id)} />)}</div></div>
+      <div className="layout-workspace">
+        <div
+          ref={node => { canvasRef.current = node; canvasDrop.setNodeRef(node); }}
+          className={`layout-canvas ${canvasDrop.isOver ? 'is-stage-over' : ''} ${isDense ? 'is-dense' : ''} ${isUltraDense ? 'is-ultra-dense' : ''}`}
+          onClick={() => setSelectedRowId(undefined)}
+        >
+          <StageDropZone shape={value.stageShape} position={stagePosition(value)} />
+          {value.rows.map(row => (
+            <RowGroup
+              key={row.id}
+              row={row}
+              draft={value}
+              sections={sections}
+              selected={selectedRowId === row.id}
+              onSelect={() => setSelectedRowId(row.id)}
+              onHoverSeat={setHoveredSeat}
+              onLeaveSeat={() => setHoveredSeat(null)}
+            />
+          ))}
+          {hoveredSeat && typeof hoveredSeat.layoutX === 'number' && typeof hoveredSeat.layoutY === 'number' && (
+            <div
+              className={`seat-tooltip ${hoveredSeat.layoutY < 24 ? 'is-below' : 'is-above'}`}
+              style={{
+                left: `${hoveredSeat.layoutX}%`,
+                top: `${hoveredSeat.layoutY}%`,
+                zIndex: 30,
+                pointerEvents: 'none',
+              }}
+              role="tooltip"
+            >
+              <div className="seat-tooltip-top">
+                <span className="seat-tooltip-title">{hoveredSeat.section} • Row {hoveredSeat.row}, #{hoveredSeat.number}</span>
+              </div>
+              <div className="seat-tooltip-bottom">
+                <span className="seat-tooltip-price">{hoveredSeat.price.toLocaleString()} {hoveredSeat.currency}</span>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
     </div><DragOverlay>{activeId?.startsWith('row:') ? <div className="layout-row-overlay">Moving row</div> : activeStageShape ? <div className="layout-stage layout-stage-overlay"><StagePreview shape={activeStageShape} /></div> : null}</DragOverlay>
   </DndContext>;
 }

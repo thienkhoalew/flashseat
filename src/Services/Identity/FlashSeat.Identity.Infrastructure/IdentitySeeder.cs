@@ -41,6 +41,7 @@ public static class IdentitySeeder
         var user = new User(Guid.NewGuid(), email, fullName, DateTimeOffset.UtcNow);
         user.SetRole(role);
         user.SetPasswordHash(hasher.HashPassword(user, password));
+        user.SetEmailVerified(true);
         dbContext.Users.Add(user);
     }
 }

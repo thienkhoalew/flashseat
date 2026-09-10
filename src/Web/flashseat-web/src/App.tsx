@@ -2,8 +2,10 @@ import { useEffect, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, Navigate, NavLink, Outlet, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { api, isAuthenticated, logout } from './api';
+import { checkoutSessionEvent, clearCheckoutSession, readActiveCheckout, type ActiveCheckout } from './checkout-session';
 import { AdminEventFormPage, AdminEventsPage } from './admin-pages';
 import { AuthPage, BookingDetailPage, CheckInPage, CheckoutPage, EventDetailPage, HomePage, MyBookingsPage, SeatPage } from './pages';
+import { FlashSeatLogo } from './logo';
 
 function useCurrentUser() {
   return useQuery({ queryKey: ['current-user'], queryFn: api.me, enabled: isAuthenticated(), retry: false });
@@ -11,14 +13,58 @@ function useCurrentUser() {
 
 function Layout() {
   const nav = useNavigate();
+  const location = useLocation();
   const qc = useQueryClient();
   const [authenticated, setAuthenticated] = useState(isAuthenticated());
+  const [activeCheckout, setActiveCheckout] = useState<ActiveCheckout | null>(() => readActiveCheckout());
   const [theme, setTheme] = useState<'dark' | 'light'>(() => {
     const saved = localStorage.getItem('flashseat-theme');
     return saved === 'light' ? 'light' : 'dark';
   });
   const user = useCurrentUser();
+  const activeHold = useQuery({
+    queryKey: ['resume-hold', activeCheckout?.holdId],
+    queryFn: () => api.hold(activeCheckout!.holdId),
+    enabled: authenticated && !!activeCheckout,
+    retry: false,
+    refetchOnMount: 'always',
+    refetchOnWindowFocus: true,
+  });
+  const activeBookingId = activeCheckout ? sessionStorage.getItem(`flashseat:booking-id:${activeCheckout.holdId}`) : null;
+  const activePaymentId = activeCheckout ? sessionStorage.getItem(`flashseat:payment-id:${activeCheckout.holdId}`) : null;
+  const activeBooking = useQuery({
+    queryKey: ['resume-booking', activeBookingId],
+    queryFn: () => api.booking(activeBookingId!),
+    enabled: authenticated && !!activeBookingId,
+    retry: false,
+    refetchOnMount: 'always',
+    refetchOnWindowFocus: true,
+  });
+  const activePayment = useQuery({
+    queryKey: ['resume-payment', activePaymentId],
+    queryFn: () => api.payment(activePaymentId!),
+    enabled: authenticated && !!activePaymentId,
+    retry: false,
+    refetchOnMount: 'always',
+    refetchOnWindowFocus: true,
+  });
   const navClass = ({ isActive }: { isActive: boolean }) => isActive ? 'active' : undefined;
+  const holdIsActive = !!activeHold.data && ['Active', 'Converted'].includes(activeHold.data.status) && Date.parse(activeHold.data.expiresAt) > Date.now();
+  const bookingIsPending = activeBooking.data?.status === 'PendingPayment';
+  const paymentIsPending = !activePaymentId || activePayment.data?.status === 'Pending';
+  const paymentBelongsToBooking = !activePayment.data || activePayment.data.bookingId === activeBookingId;
+  const resumeReady = authenticated && !!activeCheckout && !!activeBookingId && holdIsActive && bookingIsPending && paymentIsPending && paymentBelongsToBooking;
+
+  useEffect(() => {
+    if (!activeCheckout || activeHold.isLoading) return;
+    if (activeHold.isError || !holdIsActive) {
+      clearCheckoutSession(activeCheckout.holdId);
+      return;
+    }
+    if (!activeBookingId || activeBooking.isLoading || activePayment.isLoading) return;
+    const stale = activeBooking.isError || activePayment.isError || !bookingIsPending || !paymentIsPending || !paymentBelongsToBooking;
+    if (stale) clearCheckoutSession(activeCheckout.holdId);
+  }, [activeCheckout, activeBookingId, activeHold.isError, activeHold.isLoading, activeBooking.isError, activeBooking.isLoading, activePayment.isError, activePayment.isLoading, holdIsActive, bookingIsPending, paymentIsPending, paymentBelongsToBooking]);
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
@@ -33,6 +79,7 @@ function Layout() {
     const update = () => {
       const next = isAuthenticated();
       setAuthenticated(next);
+      setActiveCheckout(next ? readActiveCheckout() : null);
       if (next) qc.invalidateQueries({ queryKey: ['current-user'] });
       else qc.clear();
     };
@@ -40,20 +87,38 @@ function Layout() {
     return () => window.removeEventListener('auth-changed', update);
   }, [qc]);
 
+  useEffect(() => {
+    const update = () => setActiveCheckout(readActiveCheckout());
+    window.addEventListener(checkoutSessionEvent, update);
+    window.addEventListener('focus', update);
+    return () => {
+      window.removeEventListener(checkoutSessionEvent, update);
+      window.removeEventListener('focus', update);
+    };
+  }, []);
+
+  const resumePayment = !location.pathname.startsWith('/checkout/') && resumeReady && activeCheckout && <NavLink className="resume-payment" to={`/checkout/${activeCheckout.holdId}`}>Resume payment</NavLink>;
+
   return <>
     <a className="skip-link" href="#main-content">Skip to content</a>
     <header className="site-header">
       <div className="site-header-inner">
         <Link className="brand" to="/" aria-label="FlashSeat home">
-          <span>FS</span>
+          <FlashSeatLogo size={36} />
           <b>FlashSeat</b>
         </Link>
         <nav aria-label="Main navigation">
         <NavLink className={navClass} to="/" end>Events</NavLink>
-        {user.data && <NavLink className={navClass} to="/bookings">My tickets</NavLink>}
         {user.data?.role === 'Admin' && <><NavLink className={navClass} to="/admin/events">Admin</NavLink><NavLink className={navClass} to="/admin/check-in">Check in</NavLink></>}
         {authenticated
-          ? <button className="ghost" onClick={() => { logout(); qc.removeQueries({ queryKey: ['current-user'] }); nav('/login'); }}>Sign out</button>
+          ? <>
+              {resumePayment}
+              {user.data && <NavLink className="user-nav-chip" to="/bookings" title={`${user.data.fullName} (${user.data.email})`}>
+                <span className="user-nav-avatar">{user.data.fullName.slice(0, 1).toUpperCase()}</span>
+                <span className="user-nav-name">{user.data.fullName.split(' ')[0]}</span>
+              </NavLink>}
+              <button className="ghost" onClick={() => { logout(); qc.removeQueries({ queryKey: ['current-user'] }); nav('/login'); }}>Sign out</button>
+            </>
           : <NavLink className={({ isActive }) => `button small${isActive ? ' active' : ''}`} to="/login">Sign in</NavLink>}
         <button
           className="theme-toggle"

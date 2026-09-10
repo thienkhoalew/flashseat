@@ -84,6 +84,7 @@ public sealed class SeatHold
     public void Convert() { if (Status != SeatHoldStatus.Active) throw new InvalidOperationException(); Status = SeatHoldStatus.Converted; }
     public void Expire() { if (Status is SeatHoldStatus.Active or SeatHoldStatus.Converted) Status = SeatHoldStatus.Expired; }
     public void Release() { if (Status == SeatHoldStatus.Active) Status = SeatHoldStatus.Released; }
+    public void ReleaseAfterCancellation() { if (Status != SeatHoldStatus.Converted) throw new InvalidOperationException(); Status = SeatHoldStatus.Released; }
 }
 
 public sealed class SeatHoldItem
@@ -123,6 +124,13 @@ public sealed class Booking
     public Guid? PaymentId { get; private set; }
     public DateTimeOffset CreatedAt { get; private set; }
     public DateTimeOffset? ConfirmedAt { get; private set; }
+    public string CustomerEmail { get; private set; } = string.Empty;
+    public string CustomerName { get; private set; } = string.Empty;
+    public void SetCustomerInfo(string email, string name)
+    {
+        CustomerEmail = email;
+        CustomerName = name;
+    }
     public string EventName { get; private set; } = string.Empty;
     public string EventSlug { get; private set; } = string.Empty;
     public string EventDescription { get; private set; } = string.Empty;

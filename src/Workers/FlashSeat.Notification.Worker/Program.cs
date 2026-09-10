@@ -9,6 +9,8 @@ builder.Services.AddOptions<NotificationWorkerOptions>()
     .Bind(builder.Configuration.GetSection(NotificationWorkerOptions.SectionName))
     .ValidateDataAnnotations()
     .ValidateOnStart();
+builder.Services.Configure<SmtpOptions>(builder.Configuration.GetSection(SmtpOptions.SectionName));
+builder.Services.AddTransient<IEmailSender, SmtpEmailSender>();
 builder.Services.AddSingleton<NotificationBuffer>();
 builder.Services.AddHostedService<NotificationProcessor>();
 builder.Services.AddMassTransit(bus =>

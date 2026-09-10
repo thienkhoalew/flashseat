@@ -1,7 +1,14 @@
 using System.Threading.Channels;
 using Microsoft.Extensions.Options;
 namespace FlashSeat.Notification.Worker;
-public sealed record NotificationCommand(Guid MessageId, Guid UserId, string Subject, string Body);
+public sealed record NotificationCommand(
+    Guid MessageId,
+    Guid UserId,
+    string Subject,
+    string Body,
+    string? ToEmail = null,
+    string? ToName = null,
+    bool IsHtml = false);
 public sealed class NotificationBuffer
 {
     private readonly Channel<NotificationCommand> _channel;

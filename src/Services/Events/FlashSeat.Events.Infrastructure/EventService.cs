@@ -76,7 +76,7 @@ public sealed class EventService(
             request.SalesEndAt, now);
         entity.SetStageShape(ParseStageShape(request.StageShape));
         entity.SetStagePosition(request.StageX, request.StageY);
-        AddSeats(entity, request.Seats);
+        AddSeats(dbContext, entity, request.Seats);
         dbContext.Events.Add(entity);
         await dbContext.SaveChangesAsync(cancellationToken);
         return await GetEventAsync(entity.Id, true, cancellationToken);
@@ -99,7 +99,7 @@ public sealed class EventService(
         await dbContext.SaveChangesAsync(cancellationToken);
         dbContext.ChangeTracker.Clear();
         entity = await dbContext.Events.Include(x => x.Seats).SingleAsync(x => x.Id == eventId, cancellationToken);
-        AddSeats(entity, request.Seats);
+        AddSeats(dbContext, entity, request.Seats);
         await dbContext.SaveChangesAsync(cancellationToken);
         try
         {
@@ -205,10 +205,15 @@ public sealed class EventService(
             throw new EventLifecycleException("sales_activity_exists", "This event has booking activity and cannot be changed.");
     }
 
-    private static void AddSeats(EventEntity entity, IEnumerable<SeatInput> seats)
+    private static void AddSeats(EventsDbContext dbContext, EventEntity entity, IEnumerable<SeatInput> seats)
     {
         foreach (var seat in seats)
-            entity.Seats.Add(new Seat(Guid.NewGuid(), entity.Id, seat.Section, seat.Row, seat.Number, seat.Price, seat.Currency, seat.LayoutX, seat.LayoutY));
+        {
+            var s = new Seat(Guid.NewGuid(), entity.Id, seat.Section, seat.Row, seat.Number, seat.Price, seat.Currency, seat.LayoutX, seat.LayoutY);
+            dbContext.Seats.Add(s);
+            if (!entity.Seats.Contains(s))
+                entity.Seats.Add(s);
+        }
     }
 
     private static StageShape ParseStageShape(string value) =>

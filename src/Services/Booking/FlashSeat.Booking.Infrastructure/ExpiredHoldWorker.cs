@@ -1,4 +1,5 @@
 using FlashSeat.Booking.Domain;
+using FlashSeat.Booking.Application;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -20,6 +21,7 @@ public sealed class ExpiredHoldWorker(IServiceScopeFactory scopeFactory, TimePro
         await using var scope = scopeFactory.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<BookingDbContext>();
         var inventorySummary = scope.ServiceProvider.GetRequiredService<InventorySummaryService>();
+        var availabilityNotifier = scope.ServiceProvider.GetRequiredService<ISeatAvailabilityNotifier>();
         var now = timeProvider.GetUtcNow();
         var holds = await db.Holds.Where(x => x.ExpiresAt <= now &&
                 (x.Status == SeatHoldStatus.Active || x.Status == SeatHoldStatus.Converted))
@@ -27,6 +29,7 @@ public sealed class ExpiredHoldWorker(IServiceScopeFactory scopeFactory, TimePro
         if (holds.Count == 0) return;
 
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+        var notifications = new List<(Guid EventId, IReadOnlyCollection<Guid> SeatIds)>();
         foreach (var hold in holds)
         {
             Guid? bookingId = null;
@@ -39,6 +42,8 @@ public sealed class ExpiredHoldWorker(IServiceScopeFactory scopeFactory, TimePro
                 hold.Expire();
                 bookingId = booking.Id;
             }
+            var seatIds = await db.Inventory.Where(x => x.HoldId == hold.Id && x.BookingId == bookingId && x.Status == SeatInventoryStatus.Held)
+                .Select(x => x.SeatId).ToListAsync(cancellationToken);
             var released = await db.Inventory.Where(x => x.HoldId == hold.Id && x.BookingId == bookingId && x.Status == SeatInventoryStatus.Held)
                 .ExecuteUpdateAsync(setters => setters
                     .SetProperty(x => x.Status, SeatInventoryStatus.Available)
@@ -46,9 +51,13 @@ public sealed class ExpiredHoldWorker(IServiceScopeFactory scopeFactory, TimePro
                     .SetProperty(x => x.HoldExpiresAt, (DateTimeOffset?)null)
                     .SetProperty(x => x.BookingId, (Guid?)null), cancellationToken);
             await inventorySummary.ApplyDeltaAsync(hold.EventId, released, -released, 0, cancellationToken);
+            if (seatIds.Count > 0)
+                notifications.Add((hold.EventId, seatIds));
         }
         await db.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
+        foreach (var notification in notifications)
+            await availabilityNotifier.NotifyAsync(notification.EventId, notification.SeatIds, "Available", cancellationToken);
         logger.LogInformation("Released {ExpiredHoldCount} expired seat holds", holds.Count);
     }
 }

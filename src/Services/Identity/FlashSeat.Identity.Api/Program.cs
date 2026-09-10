@@ -43,7 +43,7 @@ auth.MapPost("/register", async (
     var response = await service.RegisterAsync(request, cancellationToken);
     return response is null
         ? Results.Conflict(new { title = "Unable to create account." })
-        : Results.Created("/api/auth/me", response);
+        : Results.Ok(response);
 }).AllowAnonymous();
 
 auth.MapPost("/login", async (
@@ -58,7 +58,64 @@ auth.MapPost("/login", async (
         return Results.ValidationProblem(validation.ToDictionary());
     }
 
-    var response = await service.LoginAsync(request, cancellationToken);
+    var result = await service.LoginAsync(request, cancellationToken);
+    if (result.IsUnverified)
+    {
+        return Results.Json(
+            new { title = "Email not verified.", code = "EMAIL_NOT_VERIFIED", email = result.Email },
+            statusCode: StatusCodes.Status403Forbidden);
+    }
+
+    return result.Response is null ? Results.Unauthorized() : Results.Ok(result.Response);
+}).AllowAnonymous();
+
+auth.MapPost("/verify-email", async (
+    VerifyEmailRequest request,
+    IValidator<VerifyEmailRequest> validator,
+    IAuthService service,
+    CancellationToken cancellationToken) =>
+{
+    var validation = await validator.ValidateAsync(request, cancellationToken);
+    if (!validation.IsValid)
+    {
+        return Results.ValidationProblem(validation.ToDictionary());
+    }
+
+    var response = await service.VerifyEmailAsync(request, cancellationToken);
+    return response is null
+        ? Results.BadRequest(new { title = "Invalid or expired verification code." })
+        : Results.Ok(response);
+}).AllowAnonymous();
+
+auth.MapPost("/resend-verification", async (
+    ResendVerificationRequest request,
+    IValidator<ResendVerificationRequest> validator,
+    IAuthService service,
+    CancellationToken cancellationToken) =>
+{
+    var validation = await validator.ValidateAsync(request, cancellationToken);
+    if (!validation.IsValid)
+    {
+        return Results.ValidationProblem(validation.ToDictionary());
+    }
+
+    await service.ResendVerificationAsync(request, cancellationToken);
+    return Results.Ok(new { message = "If the account exists and is unverified, a new code has been sent." });
+}).AllowAnonymous();
+
+auth.MapPost("/google", async (
+    GoogleAuthRequest request,
+    IValidator<GoogleAuthRequest> validator,
+    IAuthService service,
+    CancellationToken cancellationToken) =>
+{
+    var validation = await validator.ValidateAsync(request, cancellationToken);
+    if (!validation.IsValid)
+    {
+        return Results.ValidationProblem(validation.ToDictionary());
+    }
+
+    var response = await service.GoogleAuthAsync(request, cancellationToken);
     return response is null ? Results.Unauthorized() : Results.Ok(response);
 }).AllowAnonymous();
 

@@ -65,8 +65,17 @@ services:
       Jwt__Issuer: ${JWT_ISSUER:-flashseat-local}
       Jwt__Audience: ${JWT_AUDIENCE:-flashseat-api}
       Jwt__SigningKey: ${JWT_SIGNING_KEY:-development-only-signing-key-change-me-123456789}
+      Authentication__Google__ClientId: ${GOOGLE_CLIENT_ID:-}
+      Smtp__Host: ${SMTP_HOST:-mailpit}
+      Smtp__Port: ${SMTP_PORT:-1025}
+      Smtp__Username: ${SMTP_USERNAME:-}
+      Smtp__Password: ${SMTP_PASSWORD:-}
+      Smtp__EnableSsl: ${SMTP_ENABLE_SSL:-false}
+      Smtp__From: ${SMTP_FROM:-noreply@flashseat.dev}
     depends_on:
       postgres:
+        condition: service_healthy
+      mailpit:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "--spider", "-q", "http://localhost:8080/health/live"]
@@ -135,6 +144,16 @@ services:
       Jwt__Issuer: ${JWT_ISSUER:-flashseat-local}
       Jwt__Audience: ${JWT_AUDIENCE:-flashseat-api}
       Jwt__SigningKey: ${JWT_SIGNING_KEY:-development-only-signing-key-change-me-123456789}
+      PayOS__ClientId: ${PAYOS_CLIENT_ID:-}
+      PayOS__ApiKey: ${PAYOS_API_KEY:-}
+      PayOS__ChecksumKey: ${PAYOS_CHECKSUM_KEY:-}
+      PayOS__BankId: ${PAYOS_BANK_ID:-MB}
+      PayOS__AccountNumber: ${PAYOS_ACCOUNT_NUMBER:-0384064124}
+      PayOS__AccountName: ${PAYOS_ACCOUNT_NAME:-LE THIEN KHOA}
+      PayOS__BaseUrl: ${PAYOS_BASE_URL:-https://api-merchant.payos.vn}
+      PayOS__ReturnUrl: ${PAYOS_RETURN_URL:-http://localhost:5173/checkout/{holdId}?payos=return}
+      PayOS__CancelUrl: ${PAYOS_CANCEL_URL:-http://localhost:5173/checkout/{holdId}?payos=cancel}
+      PayOS__WebhookUrl: ${PAYOS_WEBHOOK_URL:-http://localhost:5000/api/payments/payos-webhook}
     depends_on:
       postgres:
         condition: service_healthy
@@ -156,6 +175,12 @@ services:
       RabbitMq__Host: rabbitmq
       RabbitMq__Username: ${RABBITMQ_DEFAULT_USER:-flashseat}
       RabbitMq__Password: ${RABBITMQ_DEFAULT_PASS:-flashseat-local}
+      Smtp__Host: ${SMTP_HOST:-mailpit}
+      Smtp__Port: ${SMTP_PORT:-1025}
+      Smtp__Username: ${SMTP_USERNAME:-}
+      Smtp__Password: ${SMTP_PASSWORD:-}
+      Smtp__EnableSsl: ${SMTP_ENABLE_SSL:-false}
+      Smtp__From: ${SMTP_FROM:-noreply@flashseat.dev}
     depends_on:
       rabbitmq:
         condition: service_healthy
@@ -188,6 +213,8 @@ services:
     build:
       context: ..
       dockerfile: src/Web/flashseat-web/Dockerfile
+      args:
+        VITE_GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
     ports:
       - "5173:80"
     depends_on:

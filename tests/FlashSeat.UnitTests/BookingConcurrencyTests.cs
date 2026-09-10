@@ -166,6 +166,37 @@ public sealed class BookingConcurrencyTests
     }
 
     [Fact]
+    public async Task My_bookings_returns_only_confirmed_bookings()
+    {
+        await using var postgres = new PostgreSqlBuilder().WithDatabase("flashseat_booking_list_tests").Build();
+        await using var redis = new RedisBuilder().Build();
+        await Task.WhenAll(postgres.StartAsync(), redis.StartAsync());
+        var options = new DbContextOptionsBuilder<BookingDbContext>().UseNpgsql(postgres.GetConnectionString()).Options;
+        var userId = Guid.NewGuid();
+        await using (var setup = new BookingDbContext(options))
+        {
+            await setup.Database.EnsureCreatedAsync();
+            var pending = new global::FlashSeat.Booking.Domain.Booking(Guid.NewGuid(), "FS-PENDING", userId, Guid.NewGuid(), Guid.NewGuid(), 100, "VND", DateTimeOffset.UtcNow);
+            pending.Items.Add(new BookingItem(Guid.NewGuid(), pending.Id, Guid.NewGuid(), "Main", "A", 1, 100, "VND", "PENDING-CODE"));
+            var confirmed = new global::FlashSeat.Booking.Domain.Booking(Guid.NewGuid(), "FS-CONFIRMED", userId, Guid.NewGuid(), Guid.NewGuid(), 200, "VND", DateTimeOffset.UtcNow.AddMinutes(-1));
+            confirmed.Confirm(Guid.NewGuid(), DateTimeOffset.UtcNow);
+            confirmed.Items.Add(new BookingItem(Guid.NewGuid(), confirmed.Id, Guid.NewGuid(), "Main", "A", 2, 200, "VND", "CONFIRMED-CODE"));
+            setup.Bookings.AddRange(pending, confirmed);
+            await setup.SaveChangesAsync();
+        }
+
+        await using var connection = await ConnectionMultiplexer.ConnectAsync(redis.GetConnectionString());
+        await using var db = new BookingDbContext(options);
+        var service = new BookingService(db, new RedisSeatLock(connection), OpenSalesClient(), TimeProvider.System);
+
+        var result = await service.GetBookingsAsync(userId, CancellationToken.None);
+
+        result.Should().ContainSingle(x => x.BookingNumber == "FS-CONFIRMED");
+        result.Should().NotContain(x => x.BookingNumber == "FS-PENDING");
+        result.Single().Items.Single().TicketCode.Should().Be("CONFIRMED-CODE");
+    }
+
+    [Fact]
     public async Task Check_in_rejects_ticket_from_another_event_without_mutating_it()
     {
         await using var postgres = new PostgreSqlBuilder().WithDatabase("flashseat_booking_checkin_tests").Build();

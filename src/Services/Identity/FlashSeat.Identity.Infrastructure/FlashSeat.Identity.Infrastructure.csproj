@@ -4,6 +4,7 @@
     <ProjectReference Include="..\FlashSeat.Identity.Application\FlashSeat.Identity.Application.csproj" />
     <ProjectReference Include="..\FlashSeat.Identity.Domain\FlashSeat.Identity.Domain.csproj" />
     <PackageReference Include="AspNetCore.HealthChecks.NpgSql" />
+    <PackageReference Include="Google.Apis.Auth" />
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" />
     <PackageReference Include="Microsoft.AspNetCore.Identity.EntityFrameworkCore" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design">

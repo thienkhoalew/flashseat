@@ -18,7 +18,7 @@ public sealed class BookingInventoryClient(HttpClient client)
         var request = new
         {
             eventId = entity.Id,
-            seats = entity.Seats.Select(x => new
+            seats = entity.Seats.DistinctBy(x => x.Id).Select(x => new
             {
                 seatId = x.Id,
                 x.Section,
@@ -37,7 +37,7 @@ public sealed class BookingInventoryClient(HttpClient client)
         var request = new
         {
             eventId = entity.Id,
-            seats = entity.Seats.Select(x => new
+            seats = entity.Seats.DistinctBy(x => x.Id).Select(x => new
             {
                 seatId = x.Id,
                 x.Section,

@@ -5,6 +5,5 @@ public sealed class CreatePaymentRequestValidator : AbstractValidator<CreatePaym
     public CreatePaymentRequestValidator()
     {
         RuleFor(x => x.BookingId).NotEmpty();
-        RuleFor(x => x.SimulateResult).Must(x => x is "Success" or "Failed");
     }
 }

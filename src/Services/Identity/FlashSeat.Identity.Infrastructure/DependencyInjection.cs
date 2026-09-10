@@ -25,6 +25,9 @@ public static class DependencyInjection
             .Bind(configuration.GetSection(JwtOptions.SectionName))
             .ValidateDataAnnotations()
             .ValidateOnStart();
+        services.Configure<GoogleOptions>(configuration.GetSection("Authentication:Google"));
+        services.Configure<SmtpOptions>(configuration.GetSection("Smtp"));
+        services.AddScoped<IEmailSender, SmtpEmailSender>();
 
         services.AddFlashSeatAuthentication(configuration);
         services.AddHealthChecks().AddNpgSql(connectionString, tags: ["ready"]);

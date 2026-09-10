@@ -12,7 +12,7 @@ export type BookingEvent = { id:string; name:string; slug:string; description:st
 export type BookingItem = HoldItem & { id?:string; currency?:string; ticketCode?:string; checkInStatus?:string; checkedInAt?:string; checkedInBy?:string|null };
 export type Booking = { id:string; bookingNumber:string; eventId:string; status:string; totalAmount:number; currency:string; createdAt:string; confirmedAt?:string; event?:BookingEvent|null; items:BookingItem[] };
 export type CheckInResponse = { ticketCode:string; status:string; checkedInAt?:string; bookingNumber:string; event?:BookingEvent|null; ticket:BookingItem };
-export type Payment = { id:string; bookingId:string; amount:number; currency:string; status:string; failureReason?:string; createdAt:string; completedAt?:string };
+export type Payment = { id:string; bookingId:string; amount:number; currency:string; status:string; failureReason?:string; createdAt:string; completedAt?:string; orderCode?:number; checkoutUrl?:string; paymentLinkId?:string; qrCode?:string; paymentLinkExpiresAt?:string; providerStatus?:string; providerReference?:string; bankId?:string; accountNumber?:string; accountName?:string; transferDescription?:string };
 export type AuthResponse = { accessToken:string; accessTokenExpiresAt:string; refreshToken:string; refreshTokenExpiresAt:string };
 export type CurrentUser = { id:string; email:string; fullName:string; role:'Admin'|'Customer' };
 export type ApiProblem = { title:string; code?:string; unavailableSeatIds:string[]; body?:unknown };
@@ -32,8 +32,21 @@ async function request<T>(path:string, init:RequestInit={}, retry=true):Promise<
   if(response.status===401) logout();
   if(!response.ok){
     const body:unknown=await response.json().catch(()=>null);
+    let title = 'Something went wrong';
+    if (typeof body === 'object' && body !== null) {
+      const b = body as Record<string, unknown>;
+      if (b.errors && typeof b.errors === 'object') {
+        const errEntries = Object.entries(b.errors as Record<string, unknown>)
+          .flatMap(([field, msgs]) => Array.isArray(msgs) ? (msgs as unknown[]).map(m => `${field}: ${m}`) : [`${field}: ${msgs}`]);
+        if (errEntries.length > 0) title = errEntries.join('; ');
+      } else if (typeof b.detail === 'string' && b.detail) {
+        title = b.detail;
+      } else if (typeof b.title === 'string' && b.title) {
+        title = b.title;
+      }
+    }
     const problem={
-      title:typeof body==='object'&&body!==null&&'title' in body&&typeof body.title==='string'?body.title:'Something went wrong',
+      title,
       code:typeof body==='object'&&body!==null&&'code' in body&&typeof body.code==='string'?body.code:undefined,
       unavailableSeatIds:typeof body==='object'&&body!==null&&'unavailableSeatIds' in body&&Array.isArray(body.unavailableSeatIds)?body.unavailableSeatIds.filter((id):id is string=>typeof id==='string'):[],
       body,
@@ -46,14 +59,17 @@ export const api={
   events:(search='',page=1,pageSize=12)=>request<PagedResponse<EventItem>>(`/api/events?search=${encodeURIComponent(search)}&page=${page}&pageSize=${pageSize}`), event:(id:string)=>request<EventDetail>(`/api/events/${id}`),
   availability:(id:string)=>request<Availability[]>(`/api/events/${id}/availability`),
   login:(email:string,password:string)=>request<AuthResponse>('/api/auth/login',{method:'POST',body:JSON.stringify({email,password})}),
-  register:(email:string,password:string,fullName:string)=>request<AuthResponse>('/api/auth/register',{method:'POST',body:JSON.stringify({email,password,fullName})}),
+  register:(email:string,password:string,fullName:string)=>request<{email:string;message:string}>('/api/auth/register',{method:'POST',body:JSON.stringify({email,password,fullName})}),
+  verifyEmail:(email:string,code:string)=>request<AuthResponse>('/api/auth/verify-email',{method:'POST',body:JSON.stringify({email,code})}),
+  resendVerification:(email:string)=>request<{message:string}>('/api/auth/resend-verification',{method:'POST',body:JSON.stringify({email})}),
+  googleAuth:(idToken:string)=>request<AuthResponse>('/api/auth/google',{method:'POST',body:JSON.stringify({idToken})}),
   me:()=>request<CurrentUser>('/api/auth/me'),
   createHold:(eventId:string,seatIds:string[])=>request<Hold>('/api/seat-holds',{method:'POST',body:JSON.stringify({eventId,seatIds})}),
   hold:(id:string)=>request<Hold>(`/api/seat-holds/${id}`),
   releaseHold:(id:string)=>request<void>(`/api/seat-holds/${id}`,{method:'DELETE'}),
   createBooking:(holdId:string)=>request<Booking>('/api/bookings',{method:'POST',body:JSON.stringify({holdId})}),
   booking:(id:string)=>request<Booking>(`/api/bookings/${id}`),
-  createPayment:(bookingId:string,result:string,key:string)=>request<Payment>('/api/payments',{method:'POST',headers:{'Idempotency-Key':key},body:JSON.stringify({bookingId,simulateResult:result})}),
+  createPayment:(bookingId:string,key:string)=>request<Payment>('/api/payments',{method:'POST',headers:{'Idempotency-Key':key},body:JSON.stringify({bookingId})}),
   payment:(id:string)=>request<Payment>(`/api/payments/${id}`),
   bookings:()=>request<Booking[]>('/api/bookings/me'),
   checkIn:(eventId:string,ticketCode:string)=>request<CheckInResponse>('/api/admin/check-ins',{method:'POST',body:JSON.stringify({eventId,ticketCode})}),

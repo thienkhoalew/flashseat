@@ -36,6 +36,8 @@ public static class BookingDatabaseInitializer
             FROM event_seat_inventory
             GROUP BY "EventId"
             ON CONFLICT ("EventId") DO NOTHING;
+            ALTER TABLE bookings ADD COLUMN IF NOT EXISTS "CustomerEmail" text NOT NULL DEFAULT '';
+            ALTER TABLE bookings ADD COLUMN IF NOT EXISTS "CustomerName" text NOT NULL DEFAULT '';
             ALTER TABLE bookings ADD COLUMN IF NOT EXISTS "EventName" text NOT NULL DEFAULT '';
             ALTER TABLE bookings ADD COLUMN IF NOT EXISTS "EventSlug" text NOT NULL DEFAULT '';
             ALTER TABLE bookings ADD COLUMN IF NOT EXISTS "EventDescription" text NOT NULL DEFAULT '';

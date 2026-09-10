@@ -4,8 +4,9 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { BrowserRouter, MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AdminEventFormPage, AdminEventsPage } from './admin-pages';
-import { appendRowWithSeats, DEFAULT_STAGE_POSITION, emptySeatLayout, layoutFromSeats, placeStage, renumberLayout, rotateRow, serializeSeatLayout, SeatLayoutEditor, stagePosition, translateRow, translateStage } from './seat-layout-editor';
+import { appendRowWithSeats, DEFAULT_STAGE_POSITION, emptySeatLayout, layoutFromSeats, placeStage, removeRow, renumberLayout, rotateRow, serializeSeatLayout, SeatLayoutEditor, stagePosition, translateRow, translateStage } from './seat-layout-editor';
 import { ApiError, api, logout, saveAuth } from './api';
+import { setActiveCheckout } from './checkout-session';
 import App from './App';
 import { AuthPage, BookingDetailPage, CheckInPage, CheckoutPage, EventDetailPage, HomePage, MyBookingsPage, SeatPage } from './pages';
 
@@ -46,6 +47,113 @@ describe('AuthPage',()=>{
     const error=await screen.findByText('Full name must contain at least 2 characters');
     expect(error).toBeInTheDocument();
     expect(screen.getByLabelText('Full name')).toHaveAttribute('aria-describedby',error.id);
+  });
+
+  it('renders Google sign in button and logs in on callback',async()=>{
+    let gisCallback: ((res: { credential: string }) => void) | null = null;
+    const initialize = vi.fn().mockImplementation((config: { callback: (res: { credential: string }) => void }) => {
+      gisCallback = config.callback;
+    });
+    const renderButton = vi.fn();
+    window.google = {
+      accounts: {
+        id: {
+          initialize,
+          renderButton,
+        },
+      },
+    };
+
+    const googleAuth = vi.spyOn(api, 'googleAuth').mockResolvedValue({
+      accessToken: 'test-google-access-token',
+      accessTokenExpiresAt: '2099-01-01T00:00:00Z',
+      refreshToken: 'test-google-refresh-token',
+      refreshTokenExpiresAt: '2099-01-08T00:00:00Z',
+    });
+
+    renderWithQuery(<AuthPage/>);
+    expect(screen.getByTestId('google-signin-btn')).toBeInTheDocument();
+    expect(initialize).toHaveBeenCalledWith(expect.objectContaining({
+      client_id: expect.any(String),
+    }));
+    expect(renderButton).toHaveBeenCalled();
+
+    expect(gisCallback).not.toBeNull();
+    gisCallback!({ credential: 'mock-google-id-token' });
+
+    await waitFor(() => expect(googleAuth).toHaveBeenCalledWith('mock-google-id-token'));
+    expect(localStorage.getItem('accessToken')).toBe('test-google-access-token');
+    delete window.google;
+  });
+
+  it('shows verify OTP screen after registration and allows verifying',async()=>{
+    const registerSpy = vi.spyOn(api, 'register').mockResolvedValue({
+      email: 'newuser@example.com',
+      message: 'Verification code sent to your email.',
+    });
+    const verifySpy = vi.spyOn(api, 'verifyEmail').mockResolvedValue({
+      accessToken: 'verified-token',
+      accessTokenExpiresAt: '2099-01-01T00:00:00Z',
+      refreshToken: 'verified-refresh',
+      refreshTokenExpiresAt: '2099-01-08T00:00:00Z',
+    });
+
+    renderWithQuery(<AuthPage/>);
+    fireEvent.click(screen.getByRole('button',{name:'Need an account? Register'}));
+    fireEvent.change(screen.getByLabelText('Full name'),{target:{value:'New User'}});
+    fireEvent.change(screen.getByLabelText('Email'),{target:{value:'newuser@example.com'}});
+    fireEvent.change(screen.getByLabelText('Password'),{target:{value:'StrongPass1!'}});
+    fireEvent.click(screen.getByRole('button',{name:'Create account'}));
+
+    await waitFor(()=>expect(registerSpy).toHaveBeenCalledWith('newuser@example.com','StrongPass1!','New User'));
+    expect(await screen.findByRole('heading',{name:'Check your email'})).toBeInTheDocument();
+    expect(screen.getByText('newuser@example.com')).toBeInTheDocument();
+
+    const codeInput = screen.getByLabelText('Verification code');
+    fireEvent.change(codeInput, { target: { value: '123456' } });
+    fireEvent.click(screen.getByRole('button',{name:'Verify email'}));
+
+    await waitFor(()=>expect(verifySpy).toHaveBeenCalledWith('newuser@example.com','123456'));
+    expect(localStorage.getItem('accessToken')).toBe('verified-token');
+  });
+
+  it('transitions to verify screen when login fails with unverified email',async()=>{
+    vi.spyOn(api, 'login').mockRejectedValue(new ApiError(403, {
+      title: 'Email not verified.',
+      code: 'EMAIL_NOT_VERIFIED',
+      unavailableSeatIds: [],
+    }));
+
+    renderWithQuery(<AuthPage/>);
+    fireEvent.change(screen.getByLabelText('Email'),{target:{value:'unverified@example.com'}});
+    fireEvent.change(screen.getByLabelText('Password'),{target:{value:'Password123!'}});
+    fireEvent.click(screen.getByRole('button',{name:'Sign in'}));
+
+    expect(await screen.findByRole('heading',{name:'Check your email'})).toBeInTheDocument();
+    expect(screen.getByText('unverified@example.com')).toBeInTheDocument();
+  });
+
+  it('resends verification code on button click',async()=>{
+    vi.spyOn(api, 'register').mockResolvedValue({
+      email: 'resend@example.com',
+      message: 'Code sent',
+    });
+    const resendSpy = vi.spyOn(api, 'resendVerification').mockResolvedValue({
+      message: 'If the account exists and is unverified, a new code has been sent.',
+    });
+
+    renderWithQuery(<AuthPage/>);
+    fireEvent.click(screen.getByRole('button',{name:'Need an account? Register'}));
+    fireEvent.change(screen.getByLabelText('Full name'),{target:{value:'Resend User'}});
+    fireEvent.change(screen.getByLabelText('Email'),{target:{value:'resend@example.com'}});
+    fireEvent.change(screen.getByLabelText('Password'),{target:{value:'StrongPass1!'}});
+    fireEvent.click(screen.getByRole('button',{name:'Create account'}));
+
+    expect(await screen.findByRole('heading',{name:'Check your email'})).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button',{name:'Resend code'}));
+
+    await waitFor(()=>expect(resendSpy).toHaveBeenCalledWith('resend@example.com'));
+    expect(await screen.findByText('A new verification code has been sent to your email.')).toBeInTheDocument();
   });
 });
 
@@ -93,18 +201,19 @@ describe('HomePage',()=>{
   });
 
   it('reveals the event listing when clicking hero or explore button',async()=>{
-    const scrollIntoView = vi.fn();
     const scrollTo = vi.fn();
-    Object.defineProperty(HTMLElement.prototype,'scrollIntoView',{value:scrollIntoView,configurable:true});
     Object.defineProperty(window,'scrollTo',{value:scrollTo,configurable:true});
     vi.spyOn(api,'events').mockResolvedValue({items:[],page:1,pageSize:12,totalCount:0});
     renderWithQuery(<HomePage/>);
 
+    const listing = document.querySelector('.listing-section');
+    expect(listing).not.toBeNull();
+    Object.defineProperty(listing, 'getBoundingClientRect', { value: () => ({ top: 1000 }), configurable: true });
     fireEvent.click(screen.getByRole('button',{name:/Explore events/}));
-    expect(scrollIntoView).toHaveBeenCalledWith({behavior:'smooth',block:'start'});
+    expect(scrollTo).toHaveBeenCalledWith({top:1000,behavior:'smooth'});
 
-    fireEvent.wheel(screen.getByRole('heading',{name:/Find your next/}));
-    expect(scrollIntoView).toHaveBeenCalledTimes(2);
+    fireEvent.wheel(window, { deltaY: 100 });
+    expect(scrollTo).toHaveBeenCalledTimes(2);
   });
 
   it('opens the event detail page from the event name',async()=>{
@@ -190,8 +299,48 @@ describe('Role routes',()=>{
     vi.spyOn(api,'bookings').mockResolvedValue([]);
     renderWithQuery(<MemoryRouter initialEntries={['/bookings']}><App/></MemoryRouter>,false);
     expect(await screen.findByRole('heading',{name:'My tickets'})).toBeInTheDocument();
-    expect(screen.getByRole('link',{name:'My tickets'})).toBeInTheDocument();
+    expect(screen.getByTitle('Admin (admin@example.com)')).toHaveAttribute('href','/bookings');
     expect(screen.getByRole('link',{name:'Admin'})).toBeInTheDocument();
+  });
+
+  it('shows Resume payment for an active pending checkout', async () => {
+    saveAuth({accessToken:'token',accessTokenExpiresAt:'2026-08-01',refreshToken:'refresh',refreshTokenExpiresAt:'2026-08-01'});
+    setActiveCheckout({holdId:'hold-12345678',eventId:'event-1'});
+    sessionStorage.setItem('flashseat:booking-id:hold-12345678','booking-1');
+    sessionStorage.setItem('flashseat:payment-id:hold-12345678','payment-1');
+    vi.spyOn(api,'me').mockResolvedValue({id:'1',email:'customer@example.com',fullName:'Customer',role:'Customer'});
+    vi.spyOn(api,'hold').mockResolvedValue({id:'hold-12345678',eventId:'event-1',status:'Converted',expiresAt:new Date(Date.now()+300000).toISOString(),items:[],totalAmount:100,currency:'USD'});
+    vi.spyOn(api,'booking').mockResolvedValue({id:'booking-1',bookingNumber:'FS-1',eventId:'event-1',status:'PendingPayment',totalAmount:100,currency:'USD',createdAt:new Date().toISOString(),items:[]});
+    vi.spyOn(api,'payment').mockResolvedValue({id:'payment-1',bookingId:'booking-1',amount:100,currency:'USD',status:'Pending',createdAt:new Date().toISOString()});
+    renderWithQuery(<MemoryRouter initialEntries={['/bookings']}><App/></MemoryRouter>,false);
+    expect(await screen.findByRole('link',{name:'Resume payment'})).toHaveAttribute('href','/checkout/hold-12345678');
+  });
+
+  it('hides Resume payment while already on checkout', async () => {
+    saveAuth({accessToken:'token',accessTokenExpiresAt:'2026-08-01',refreshToken:'refresh',refreshTokenExpiresAt:'2026-08-01'});
+    setActiveCheckout({holdId:'hold-12345678',eventId:'event-1'});
+    sessionStorage.setItem('flashseat:booking-id:hold-12345678','booking-1');
+    sessionStorage.setItem('flashseat:payment-id:hold-12345678','payment-1');
+    vi.spyOn(api,'me').mockResolvedValue({id:'1',email:'customer@example.com',fullName:'Customer',role:'Customer'});
+    vi.spyOn(api,'hold').mockResolvedValue({id:'hold-12345678',eventId:'event-1',status:'Converted',expiresAt:new Date(Date.now()+300000).toISOString(),items:[],totalAmount:100,currency:'USD'});
+    vi.spyOn(api,'booking').mockResolvedValue({id:'booking-1',bookingNumber:'FS-1',eventId:'event-1',status:'PendingPayment',totalAmount:100,currency:'USD',createdAt:new Date().toISOString(),items:[]});
+    vi.spyOn(api,'payment').mockResolvedValue({id:'payment-1',bookingId:'booking-1',amount:100,currency:'USD',status:'Pending',createdAt:new Date().toISOString()});
+    renderWithQuery(<MemoryRouter initialEntries={['/checkout/hold-12345678']}><App/></MemoryRouter>,false);
+    await waitFor(() => expect(screen.queryByRole('link',{name:'Resume payment'})).not.toBeInTheDocument());
+  });
+
+  it('hides and clears Resume payment for a confirmed checkout', async () => {
+    saveAuth({accessToken:'token',accessTokenExpiresAt:'2026-08-01',refreshToken:'refresh',refreshTokenExpiresAt:'2026-08-01'});
+    setActiveCheckout({holdId:'hold-12345678',eventId:'event-1'});
+    sessionStorage.setItem('flashseat:booking-id:hold-12345678','booking-1');
+    vi.spyOn(api,'me').mockResolvedValue({id:'1',email:'customer@example.com',fullName:'Customer',role:'Customer'});
+    vi.spyOn(api,'hold').mockResolvedValue({id:'hold-12345678',eventId:'event-1',status:'Converted',expiresAt:new Date(Date.now()+300000).toISOString(),items:[],totalAmount:100,currency:'USD'});
+    vi.spyOn(api,'booking').mockResolvedValue({id:'booking-1',bookingNumber:'FS-1',eventId:'event-1',status:'Confirmed',totalAmount:100,currency:'USD',createdAt:new Date().toISOString(),items:[]});
+    renderWithQuery(<MemoryRouter initialEntries={['/bookings']}><App/></MemoryRouter>,false);
+    await waitFor(() => {
+      expect(screen.queryByRole('link',{name:'Resume payment'})).not.toBeInTheDocument();
+      expect(sessionStorage.getItem('flashseat:active-checkout')).toBeNull();
+    });
   });
 });
 
@@ -218,6 +367,53 @@ describe('AdminEventFormPage',()=>{
     expect(next.seats.slice(0,4)).toEqual(firstSeats);
     expect(next.seats.slice(4).map(seat=>seat.number)).toEqual([1,2]);
     expect(next.seats.slice(4).every(seat=>seat.section==='VIP'&&seat.row==='B'&&seat.price===500000&&seat.currency==='VND')).toBe(true);
+  });
+
+  it('removes a row and its seats with removeRow', () => {
+    const type = { id: 'type-vip', name: 'VIP', price: 500000, currency: 'VND' };
+    const withRowA = appendRowWithSeats(emptySeatLayout(), 'VIP', 'A', type, 3);
+    const withRowB = appendRowWithSeats(withRowA, 'VIP', 'B', type, 2);
+    expect(withRowB.rows).toHaveLength(2);
+    expect(withRowB.seats).toHaveLength(5);
+
+    const afterRemoveA = removeRow(withRowB, withRowB.rows[0].id);
+    expect(afterRemoveA.rows).toHaveLength(1);
+    expect(afterRemoveA.rows[0].label).toBe('B');
+    expect(afterRemoveA.seats).toHaveLength(2);
+    expect(afterRemoveA.seats.every(s => s.row === 'B')).toBe(true);
+  });
+
+  it('allows removing an existing row from the editor UI', () => {
+    const onChange = vi.fn();
+    const type = { id: 'type-vip', name: 'VIP', price: 500000, currency: 'VND' };
+    const layout = appendRowWithSeats(emptySeatLayout(), 'VIP', 'A', type, 4);
+    render(<SeatLayoutEditor value={layout} onChange={onChange} />);
+
+    expect(screen.getByText(/Existing rows \(1\)/i)).toBeInTheDocument();
+    const removeBtn = screen.getByRole('button', { name: 'Remove row VIP A' });
+    fireEvent.click(removeBtn);
+    expect(onChange).toHaveBeenCalledWith(expect.objectContaining({
+      rows: [],
+      seats: [],
+    }));
+  });
+
+  it('allows removing selected row via Delete key in the editor', () => {
+    const onChange = vi.fn();
+    const type = { id: 'type-vip', name: 'VIP', price: 500000, currency: 'VND' };
+    const layout = appendRowWithSeats(emptySeatLayout(), 'VIP', 'A', type, 4);
+    render(<SeatLayoutEditor value={layout} onChange={onChange} />);
+
+    // Click row tag or item to select
+    fireEvent.click(screen.getByLabelText('Move VIP row A'));
+    expect(screen.getByRole('button', { name: 'Delete row VIP A' })).toBeInTheDocument();
+
+    // Press Delete
+    fireEvent.keyDown(window, { key: 'Delete' });
+    expect(onChange).toHaveBeenCalledWith(expect.objectContaining({
+      rows: [],
+      seats: [],
+    }));
   });
 
   it('selects a stage preset',()=>{
@@ -412,7 +608,7 @@ describe('SeatPage',()=>{
     expect(screen.getAllByText('$70.00')).toHaveLength(2);
     expect(screen.getByRole('button',{name:'Pay'})).toBeEnabled();
     expect(screen.queryByText('Checkout reached')).not.toBeInTheDocument();
-    expect(screen.queryByAltText('FlashSeat demo payment QR; no real payment')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Bank transfer payment QR code')).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button',{name:/Seat A7/}));
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
@@ -422,28 +618,102 @@ describe('SeatPage',()=>{
 describe('CheckoutPage',()=>{
   const hold={id:'hold-12345678',eventId:'event-1',status:'Active',expiresAt:new Date(Date.now()+300000).toISOString(),items:[{seatId:'seat-1',section:'Main',row:'A',number:1,price:100}],totalAmount:100,currency:'USD'};
 
-  it('shows held seats and does not pay on mount',async()=>{
+  it('automatically creates a booking and renders the PayOS QR inline',async()=>{
+    vi.spyOn(api,'hold').mockResolvedValue(hold);
+    const createBooking=vi.spyOn(api,'createBooking').mockResolvedValue({id:'booking-1',bookingNumber:'FS-1',eventId:'event-1',status:'PendingPayment',totalAmount:100,currency:'USD',createdAt:new Date().toISOString(),items:hold.items});
+    const createPayment=vi.spyOn(api,'createPayment').mockResolvedValue({id:'payment-1',bookingId:'booking-1',amount:100,currency:'USD',status:'Pending',createdAt:new Date().toISOString(),qrCode:'00020101021238570010A000000727012700069704220113VQRQ0000000000000000000000000000000000000000000000000000000000000000',orderCode:123456,bankId:'MB',accountNumber:'0384064124',accountName:'LE THIEN KHOA',transferDescription:'FS 123456'});
+    renderWithQuery(<MemoryRouter initialEntries={['/checkout/hold-12345678']}><Routes><Route path="/checkout/:holdId" element={<CheckoutPage/>}/></Routes></MemoryRouter>,false);
+    await waitFor(()=>expect(createPayment).toHaveBeenCalledWith('booking-1',expect.any(String)));
+    expect(createBooking).toHaveBeenCalledWith('hold-12345678');
+    expect(await screen.findByLabelText('Bank transfer payment QR code')).toBeInTheDocument();
+    expect(screen.getByText('Ngân hàng')).toBeInTheDocument();
+    expect(screen.getByText('MB')).toBeInTheDocument();
+    expect(screen.getByText('Số tài khoản')).toBeInTheDocument();
+    expect(screen.getByText('LE THIEN KHOA')).toBeInTheDocument();
+    expect(screen.getByText('FS 123456')).toBeInTheDocument();
+    expect(screen.queryByRole('link',{name:'Mở trang thanh toán PayOS'})).not.toBeInTheDocument();
+    expect(screen.queryByRole('button',{name:'Thanh toán qua PayOS'})).not.toBeInTheDocument();
+    expect(sessionStorage.getItem('flashseat:payment-key:hold-12345678')).toBeTruthy();
+    expect(JSON.parse(sessionStorage.getItem('flashseat:active-checkout') ?? '{}')).toEqual({holdId:'hold-12345678',eventId:'event-1'});
+  });
+
+  it('resumes an existing booking and payment without opening PayOS',async()=>{
+    sessionStorage.setItem('flashseat:booking-id:hold-12345678','booking-1');
+    sessionStorage.setItem('flashseat:payment-id:hold-12345678','payment-1');
     vi.spyOn(api,'hold').mockResolvedValue(hold);
     const createBooking=vi.spyOn(api,'createBooking');
     const createPayment=vi.spyOn(api,'createPayment');
+    vi.spyOn(api,'booking').mockResolvedValue({id:'booking-1',bookingNumber:'FS-1',eventId:'event-1',status:'PendingPayment',totalAmount:100,currency:'USD',createdAt:new Date().toISOString(),items:hold.items});
+    vi.spyOn(api,'payment').mockResolvedValue({id:'payment-1',bookingId:'booking-1',amount:100,currency:'USD',status:'Pending',createdAt:new Date().toISOString(),qrCode:'payos-qr'});
     renderWithQuery(<MemoryRouter initialEntries={['/checkout/hold-12345678']}><Routes><Route path="/checkout/:holdId" element={<CheckoutPage/>}/></Routes></MemoryRouter>,false);
-    expect(await screen.findByText('Held')).toBeInTheDocument();
-    expect(screen.getByAltText('FlashSeat demo payment QR; no real payment')).toBeInTheDocument();
-    expect(screen.getByText(/no real money is transferred/)).toBeInTheDocument();
+    expect(await screen.findByLabelText('Bank transfer payment QR code')).toBeInTheDocument();
     expect(createBooking).not.toHaveBeenCalled();
     expect(createPayment).not.toHaveBeenCalled();
+    expect(screen.queryByRole('link',{name:/PayOS/i})).not.toBeInTheDocument();
   });
 
-  it('creates booking and payment only after confirmation',async()=>{
+  it('releases a pending payment hold before returning to the seat map',async()=>{
+    sessionStorage.setItem('flashseat:booking-id:hold-12345678','booking-1');
+    sessionStorage.setItem('flashseat:payment-id:hold-12345678','payment-1');
+    sessionStorage.setItem('flashseat:payment-key:hold-12345678','payment-key');
     vi.spyOn(api,'hold').mockResolvedValue(hold);
-    vi.spyOn(api,'createBooking').mockResolvedValue({id:'booking-1',bookingNumber:'FS-1',eventId:'event-1',status:'PendingPayment',totalAmount:100,currency:'USD',createdAt:new Date().toISOString(),items:hold.items});
-    const createPayment=vi.spyOn(api,'createPayment').mockResolvedValue({id:'payment-1',bookingId:'booking-1',amount:100,currency:'USD',status:'Succeeded',createdAt:new Date().toISOString()});
-    vi.spyOn(api,'booking').mockResolvedValue({id:'booking-1',bookingNumber:'FS-1',eventId:'event-1',status:'Confirmed',totalAmount:100,currency:'USD',createdAt:new Date().toISOString(),items:hold.items});
+    vi.spyOn(api,'booking').mockResolvedValue({id:'booking-1',bookingNumber:'FS-1',eventId:'event-1',status:'PendingPayment',totalAmount:100,currency:'USD',createdAt:new Date().toISOString(),items:hold.items});
+    vi.spyOn(api,'payment').mockResolvedValue({id:'payment-1',bookingId:'booking-1',amount:100,currency:'USD',status:'Pending',createdAt:new Date().toISOString(),qrCode:'payos-qr'});
+    const releaseHold=vi.spyOn(api,'releaseHold').mockResolvedValue();
+    renderWithQuery(<MemoryRouter initialEntries={['/checkout/hold-12345678']}><Routes><Route path="/checkout/:holdId" element={<CheckoutPage/>}/><Route path="/events/:id/seats" element={<div>Seat map reached</div>}/></Routes></MemoryRouter>,false);
+
+    expect(await screen.findByRole('button',{name:'Back to seat selection'})).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button',{name:'Back to seat selection'}));
+
+    await waitFor(()=>expect(releaseHold).toHaveBeenCalledWith('hold-12345678'));
+    expect(await screen.findByText('Seat map reached')).toBeInTheDocument();
+    expect(sessionStorage.getItem('flashseat:booking-id:hold-12345678')).toBeNull();
+    expect(sessionStorage.getItem('flashseat:payment-id:hold-12345678')).toBeNull();
+    expect(sessionStorage.getItem('flashseat:payment-key:hold-12345678')).toBeNull();
+    expect(sessionStorage.getItem('flashseat:active-checkout')).toBeNull();
+  });
+
+  it('stays on checkout and preserves session state when release fails',async()=>{
+    sessionStorage.setItem('flashseat:booking-id:hold-12345678','booking-1');
+    sessionStorage.setItem('flashseat:payment-id:hold-12345678','payment-1');
+    sessionStorage.setItem('flashseat:payment-key:hold-12345678','payment-key');
+    vi.spyOn(api,'hold').mockResolvedValue(hold);
+    vi.spyOn(api,'booking').mockResolvedValue({id:'booking-1',bookingNumber:'FS-1',eventId:'event-1',status:'PendingPayment',totalAmount:100,currency:'USD',createdAt:new Date().toISOString(),items:hold.items});
+    vi.spyOn(api,'payment').mockResolvedValue({id:'payment-1',bookingId:'booking-1',amount:100,currency:'USD',status:'Pending',createdAt:new Date().toISOString(),qrCode:'payos-qr'});
+    vi.spyOn(api,'releaseHold').mockRejectedValue(new ApiError(409,{title:'This checkout cannot release its seats.',code:'hold_not_releasable',unavailableSeatIds:[]}));
+    renderWithQuery(<MemoryRouter initialEntries={['/checkout/hold-12345678']}><Routes><Route path="/checkout/:holdId" element={<CheckoutPage/>}/><Route path="/events/:id/seats" element={<div>Seat map reached</div>}/></Routes></MemoryRouter>,false);
+
+    fireEvent.click(await screen.findByRole('button',{name:'Back to seat selection'}));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('This checkout cannot release its seats.');
+    expect(screen.queryByText('Seat map reached')).not.toBeInTheDocument();
+    expect(sessionStorage.getItem('flashseat:booking-id:hold-12345678')).toBe('booking-1');
+    expect(sessionStorage.getItem('flashseat:payment-id:hold-12345678')).toBe('payment-1');
+    expect(sessionStorage.getItem('flashseat:payment-key:hold-12345678')).toBe('payment-key');
+    expect(sessionStorage.getItem('flashseat:active-checkout')).toEqual(JSON.stringify({holdId:'hold-12345678',eventId:'event-1'}));
+  });
+
+  it('shows completion actions when payment is confirmed',async()=>{
+    sessionStorage.setItem('flashseat:booking-id:hold-12345678','booking-1');
+    vi.spyOn(api,'hold').mockResolvedValue(hold);
+    vi.spyOn(api,'booking').mockResolvedValue({id:'booking-1',bookingNumber:'FS-1',eventId:'event-1',status:'Confirmed',totalAmount:100,currency:'USD',createdAt:new Date().toISOString(),confirmedAt:new Date().toISOString(),items:hold.items});
     renderWithQuery(<MemoryRouter initialEntries={['/checkout/hold-12345678']}><Routes><Route path="/checkout/:holdId" element={<CheckoutPage/>}/></Routes></MemoryRouter>,false);
-    fireEvent.click(await screen.findByRole('button',{name:'Confirm demo payment'}));
-    await screen.findByText('Payment confirmed.');
-    expect(createPayment).toHaveBeenCalledWith('booking-1','Success',expect.any(String));
-    expect(sessionStorage.getItem('flashseat:payment-key:hold-12345678')).toBeTruthy();
+    expect(await screen.findByRole('heading',{name:'Your booking is confirmed.'})).toBeInTheDocument();
+    expect(screen.getByText('FS-1')).toBeInTheDocument();
+    expect(screen.getByRole('link',{name:'View ticket detail'})).toHaveAttribute('href','/bookings/booking-1');
+    expect(screen.getByRole('link',{name:'Back to event'})).toHaveAttribute('href','/events/event-1');
+    expect(screen.queryByLabelText(/seconds remaining/)).not.toBeInTheDocument();
+  });
+
+  it('renders expired state and releases hold when time runs out',async()=>{
+    const expiredHold={...hold,expiresAt:new Date(Date.now()-10000).toISOString(),status:'Expired'};
+    vi.spyOn(api,'hold').mockResolvedValue(expiredHold);
+    const releaseHold=vi.spyOn(api,'releaseHold').mockResolvedValue();
+    renderWithQuery(<MemoryRouter initialEntries={['/checkout/hold-12345678']}><Routes><Route path="/checkout/:holdId" element={<CheckoutPage/>}/></Routes></MemoryRouter>,false);
+    expect(await screen.findByText('Hết thời gian giữ chỗ')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Bank transfer payment QR code')).not.toBeInTheDocument();
+    expect(screen.getByRole('link',{name:'Back to seat selection'})).toBeInTheDocument();
+    expect(releaseHold).toHaveBeenCalledWith('hold-12345678');
   });
 });
 
@@ -462,6 +732,24 @@ describe('MyBookingsPage',()=>{
     expect(screen.getByText((content) => content.startsWith('Main Hall ·'))).toBeInTheDocument();
     expect(screen.getByRole('link',{name:'View tickets'})).toHaveAttribute('href','/bookings/booking-2');
   });
+
+  it('hides pending bookings even when they contain ticket-shaped items',async()=>{
+    vi.spyOn(api,'bookings').mockResolvedValue([{id:'pending-1',bookingNumber:'FS-PENDING',eventId:'event-1',status:'PendingPayment',totalAmount:100,currency:'USD',createdAt:'2026-07-17T12:00:00Z',items:[{id:'item-pending',seatId:'seat-1',section:'Main',row:'A',number:1,price:100,ticketCode:'PREPAYMENT-CODE'}]}]);
+    renderWithQuery(<MyBookingsPage/>);
+    expect(await screen.findByText("You don't have any confirmed tickets yet.")).toBeInTheDocument();
+    expect(screen.queryByText('FS-PENDING')).not.toBeInTheDocument();
+    expect(screen.queryByRole('link',{name:'View tickets'})).not.toBeInTheDocument();
+  });
+
+  it('renders user profile details when current user is logged in',async()=>{
+    vi.spyOn(api,'bookings').mockResolvedValue([]);
+    vi.spyOn(api,'me').mockResolvedValue({id:'u-1',email:'tester@example.com',fullName:'Alex Rivera',role:'Customer'});
+    renderWithQuery(<MyBookingsPage/>);
+    expect(await screen.findByRole('heading',{name:'Alex Rivera',level:2})).toBeInTheDocument();
+    expect(screen.getByText('tester@example.com')).toBeInTheDocument();
+    expect(screen.getByText('Customer')).toBeInTheDocument();
+    expect(screen.getByText('AL')).toBeInTheDocument();
+  });
 });
 
 describe('BookingDetailPage',()=>{
@@ -471,6 +759,14 @@ describe('BookingDetailPage',()=>{
     expect(await screen.findByRole('heading',{name:'Arena Show',level:1})).toBeInTheDocument();
     expect(screen.getAllByRole('img')).toHaveLength(2);
     expect(screen.getAllByText(/0123456789|FEDCBA9876/)).toHaveLength(2);
+  });
+
+  it('does not render ticket details for a pending booking',async()=>{
+    vi.spyOn(api,'booking').mockResolvedValue({id:'pending-2',bookingNumber:'FS-PENDING',eventId:'event-1',status:'PendingPayment',totalAmount:100,currency:'USD',createdAt:'2026-07-17T12:00:00Z',event:null,items:[{id:'item-pending',seatId:'seat-1',section:'Main',row:'A',number:1,price:100,ticketCode:'PREPAYMENT-CODE'}]});
+    renderWithQuery(<MemoryRouter initialEntries={['/bookings/pending-2']}><Routes><Route path="/bookings/:id" element={<BookingDetailPage/>}/></Routes></MemoryRouter>,false);
+    expect(await screen.findByText('This booking is not confirmed, so no ticket has been issued.')).toBeInTheDocument();
+    expect(screen.queryByText('PREPAYMENT-CODE')).not.toBeInTheDocument();
+    expect(screen.queryByText('QR available after payment')).not.toBeInTheDocument();
   });
 });
 
