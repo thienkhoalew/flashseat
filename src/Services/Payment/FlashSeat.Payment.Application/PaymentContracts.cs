@@ -11,20 +11,23 @@ public sealed record PayOSPaymentRequest(
     string Signature,
     long? ExpiredAt = null);
 
-public sealed record PayOSPaymentResponse(string Code, string Desc, PayOSPaymentData? Data);
+public sealed record PayOSPaymentResponse(
+    string? Code,
+    string? Desc,
+    PayOSPaymentData? Data);
 
 public sealed record PayOSPaymentData(
-    string Bin,
-    string AccountNumber,
-    string AccountName,
-    long Amount,
-    string Description,
-    long OrderCode,
-    string Currency,
-    string PaymentLinkId,
-    string Status,
-    string CheckoutUrl,
-    string QrCode,
+    string? Bin = null,
+    string? AccountNumber = null,
+    string? AccountName = null,
+    long Amount = 0,
+    string? Description = null,
+    long OrderCode = 0,
+    string? Currency = null,
+    string? PaymentLinkId = null,
+    string? Status = null,
+    string? CheckoutUrl = null,
+    string? QrCode = null,
     DateTimeOffset? CreatedAt = null,
     string? ProviderReference = null);
 

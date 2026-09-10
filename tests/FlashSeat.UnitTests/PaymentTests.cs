@@ -1,5 +1,10 @@
+using System.Net;
+using System.Net.Http.Json;
+using FlashSeat.Payment.Application;
 using FlashSeat.Payment.Domain;
+using FlashSeat.Payment.Infrastructure;
 using FluentAssertions;
+using Microsoft.Extensions.Options;
 using Xunit;
 
 namespace FlashSeat.UnitTests;
@@ -68,5 +73,106 @@ public sealed class PaymentTests
         payment.Status.Should().Be(PaymentStatus.Succeeded);
         payment.FailureReason.Should().BeNull();
         payment.CompletedAt.Should().Be(now.AddMinutes(1));
+    }
+
+    [Fact]
+    public async Task PayOS_client_accepts_a_complete_payment_link_response()
+    {
+        var client = CreatePayOSClient(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = JsonContent.Create(new
+            {
+                code = "00",
+                desc = "success",
+                data = PaymentLink(123456, 2000)
+            })
+        });
+
+        var result = await client.CreatePaymentLinkAsync(
+            new PayOSPaymentRequest(123456, 2000, "FS 123456", "https://cancel.test", "https://return.test", "signature"),
+            CancellationToken.None);
+
+        result.PaymentLinkId.Should().Be("link-id");
+        result.QrCode.Should().Be("qr-data");
+        result.Amount.Should().Be(2000);
+    }
+
+    [Fact]
+    public async Task PayOS_client_rejects_a_link_without_qr_data()
+    {
+        var client = CreatePayOSClient(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = JsonContent.Create(new
+            {
+                code = "00",
+                desc = "success",
+                data = new
+                {
+                    paymentLinkId = "link-id",
+                    checkoutUrl = "https://checkout.test",
+                    amount = 2000,
+                    orderCode = 123456,
+                    currency = "VND"
+                }
+            })
+        });
+
+        var action = () => client.CreatePaymentLinkAsync(
+            new PayOSPaymentRequest(123456, 2000, "FS 123456", "https://cancel.test", "https://return.test", "signature"),
+            CancellationToken.None);
+
+        await action.Should().ThrowAsync<HttpRequestException>()
+            .WithMessage("*order 123456*qrCode*");
+    }
+
+    [Fact]
+    public async Task PayOS_client_returns_null_when_payment_link_lookup_is_not_found()
+    {
+        var client = CreatePayOSClient(_ => new HttpResponseMessage(HttpStatusCode.NotFound));
+
+        var result = await client.GetPaymentLinkAsync(123456, 2000, CancellationToken.None);
+
+        result.Should().BeNull();
+    }
+
+    private static PayOSClient CreatePayOSClient(
+        Func<HttpRequestMessage, HttpResponseMessage> response)
+    {
+        var httpClient = new HttpClient(new TestHandler(response))
+        {
+            BaseAddress = new Uri("https://api-merchant.payos.vn/")
+        };
+        return new PayOSClient(
+            httpClient,
+            Options.Create(new PayOSOptions
+            {
+                ClientId = "client-id",
+                ApiKey = "api-key",
+                ChecksumKey = "checksum-key"
+            }));
+    }
+
+    private static object PaymentLink(long orderCode, long amount) => new
+    {
+        bin = "970422",
+        accountNumber = "123456789",
+        accountName = "FLASHSEAT",
+        amount,
+        description = $"FS {orderCode}",
+        orderCode,
+        currency = "VND",
+        paymentLinkId = "link-id",
+        status = "PENDING",
+        checkoutUrl = "https://checkout.test",
+        qrCode = "qr-data"
+    };
+
+    private sealed class TestHandler(
+        Func<HttpRequestMessage, HttpResponseMessage> response) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken) =>
+            Task.FromResult(response(request));
     }
 }

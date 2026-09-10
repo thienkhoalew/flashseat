@@ -27,7 +27,7 @@ public sealed class Payment
     public string? ProviderStatus { get; private set; }
     public void SetOrderCode(long orderCode) => OrderCode = orderCode;
     public void SetPayOSLink(string paymentLinkId, string checkoutUrl, string? qrCode, DateTimeOffset? expiresAt, string? providerStatus = null)
-    { PaymentLinkId = paymentLinkId; CheckoutUrl = checkoutUrl; QrCode = qrCode; PaymentLinkExpiresAt = expiresAt; ProviderStatus = providerStatus; }
+    { PaymentLinkId = paymentLinkId; CheckoutUrl = checkoutUrl; QrCode = qrCode; PaymentLinkExpiresAt = expiresAt; ProviderStatus = providerStatus; FailureReason = null; }
     public void SetFailureReason(string reason) => FailureReason = reason;
     public void MarkExpired(DateTimeOffset now)
     {
